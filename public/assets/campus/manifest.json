@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "perspective": "3/4 isometric",
+  "tileAuthority": "registry footprint, never PNG pixel size",
+  "assets": [
+    {
+      "id": "startup_hq",
+      "category": "building",
+      "file": "buildings/startup_hq.png",
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "id": "corporate_hq",
+      "category": "building",
+      "file": "buildings/corporate_hq.png",
+      "footprint": [
+        6,
+        6
+      ],
+      "status": "future physical HQ upgrade"
+    },
+    {
+      "id": "beauty_lab",
+      "category": "building",
+      "file": "buildings/beauty_lab.png",
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "id": "toy_studio",
+      "category": "building",
+      "file": "buildings/toy_studio.png",
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "id": "warehouse",
+      "category": "building",
+      "file": "buildings/warehouse.png",
+      "footprint": [
+        6,
+        4
+      ]
+    },
+    {
+      "id": "factory",
+      "category": "building",
+      "file": "buildings/factory.png",
+      "footprint": [
+        6,
+        4
+      ]
+    },
+    {
+      "id": "office_expansion",
+      "category": "expansion",
+      "file": "expansions/office_expansion.png",
+      "footprint": [
+        4,
+        2
+      ]
+    },
+    {
+      "id": "warehouse_expansion",
+      "category": "expansion",
+      "file": "expansions/warehouse_expansion.png",
+      "footprint": [
+        4,
+        2
+      ]
+    },
+    {
+      "id": "factory_upgrade",
+      "category": "expansion",
+      "file": "expansions/factory_upgrade.png",
+      "footprint": [
+        4,
+        2
+      ]
+    },
+    {
+      "id": "loading_dock",
+      "category": "expansion",
+      "file": "expansions/loading_dock.png",
+      "footprint": [
+        3,
+        2
+      ]
+    },
+    {
+      "id": "parking_signage",
+      "category": "decor",
+      "file": "decor/parking_signage.png",
+      "footprint": [
+        4,
+        3
+      ]
+    },
+    {
+      "id": "landscaping",
+      "category": "decor",
+      "file": "decor/landscaping.png",
+      "footprint": [
+        4,
+        4
+      ]
+    }
+  ]
+}
