@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { C, bigBtn, ctrlBtn, fmtMoney, fmtNum } from "../theme";
+import { C, UI, bigBtn, ctrlBtn, fmtMoney, fmtNum } from "../theme";
 import { FieldLabel, NumberInput, StarRating } from "../components";
 import type { SKU, World } from "../../engine/types";
 import { DESIGN_DEPTHS, PRODUCT_PROJECT_TIERS } from "../../engine/types";
@@ -81,15 +81,19 @@ export function ProductsView({ world, produce, setProductPrice, setProductQualit
     </div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 11 }}>
       {skus.map((sku, si) => {
         const stage = stageOf(sku); const meta = STAGE_META[stage]; const r = world.live?.skuResults?.[si];
-        return <button key={sku.id} onClick={() => setSelectedId(sku.id)} style={{ textAlign: "left", cursor: "pointer", background: "linear-gradient(180deg,#fff,#f7fbff)", border: `1px solid ${C.line}`, borderRadius: 14, padding: 12, color: C.ink, boxShadow: "0 5px 16px rgba(20,53,84,.05)" }}>
-          <ProductVisualCard world={world} sku={sku} size={78} />
-          <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <span style={{ color: meta.color, fontSize: 9.5, fontWeight: 900, letterSpacing: .7 }}>{meta.icon} {meta.label}</span>
-            <span style={{ color: C.faint, fontSize: 9.5 }}>v{sku.version ?? 1}</span>
+        return <button key={sku.id} onClick={() => setSelectedId(sku.id)} style={{ textAlign: "left", cursor: "pointer", background: "linear-gradient(180deg,#fff,#f7fafc)", border: `1px solid ${C.line}`, borderRadius: UI.radius.lg, padding: 12, color: C.ink, boxShadow: UI.shadow.card, transition: "transform .12s, box-shadow .12s, border-color .12s" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}>
+            <div style={{ minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sku.name}</div><div style={{ color: C.faint, fontSize: 10, marginTop: 2 }}>{archetypeByKey(sku.productKey)?.label ?? sku.productKey} · V{sku.version ?? 1}</div></div>
+            <span style={{ flex: "0 0 auto", color: meta.color, background: `${meta.color}16`, border: `1px solid ${meta.color}45`, borderRadius: 999, padding: "4px 7px", fontSize: 8.5, fontWeight: 900, letterSpacing: .55 }}>{meta.label}</span>
           </div>
-          <div style={{ color: C.dim, fontSize: 10.5, marginTop: 5, minHeight: 29 }}>{meta.blurb}</div>
-          {stage === "analyze" && <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginTop: 8, fontSize: 9.8 }}><span><b>{((r?.units ?? 0)/90).toFixed((r?.units ?? 0)/90 < 10 ? 1 : 0)}</b><small style={{ display: "block", color: C.faint }}>units/day</small></span><span><b>{fmtMoney(r?.revenue ?? 0)}</b><small style={{ display: "block", color: C.faint }}>revenue/Q</small></span><span style={{ color: (r?.margin ?? 0) >= 0 ? C.green : C.red }}><b>{fmtMoney(r?.margin ?? 0)}</b><small style={{ display: "block", color: C.faint }}>contribution/Q</small></span></div>}
-          {stage === "sell" && <div style={{ color: C.violet, fontSize: 10.5, marginTop: 8 }}><b>{fmtNum(sku.inventory)}</b> units waiting in warehouse</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "92px 1fr", gap: 12, alignItems: "center", marginTop: 11 }}>
+            <div style={{ display: "grid", placeItems: "center", padding: 7, borderRadius: UI.radius.md, background: "#eef3f6", border: `1px solid ${C.grid}` }}><ProductVisualCard world={world} sku={sku} size={78} showLabels={false} /></div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: C.dim, fontSize: 10.5, lineHeight: 1.45 }}>{meta.blurb}</div>
+              {stage === "analyze" && <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 7, marginTop: 10, fontSize: 9.5 }}><span><b>{((r?.units ?? 0)/90).toFixed((r?.units ?? 0)/90 < 10 ? 1 : 0)}</b><small style={{ display: "block", color: C.faint, marginTop: 2 }}>units/day</small></span><span><b>{fmtMoney(r?.revenue ?? 0)}</b><small style={{ display: "block", color: C.faint, marginTop: 2 }}>revenue/Q</small></span><span style={{ color: (r?.margin ?? 0) >= 0 ? C.green : C.red }}><b>{fmtMoney(r?.margin ?? 0)}</b><small style={{ display: "block", color: C.faint, marginTop: 2 }}>contribution/Q</small></span></div>}
+              {stage === "sell" && <div style={{ color: C.violet, fontSize: 10.5, marginTop: 9 }}><b>{fmtNum(sku.inventory)}</b> units waiting in warehouse</div>}
+            </div>
+          </div>
         </button>;
       })}
     </div>}

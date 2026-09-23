@@ -553,6 +553,22 @@ export function useGame() {
     return { ok: true, reason: "" };
   }, [rerender]);
 
+  const buildCampusPathLine = useCallback((tiles: { x: number; y: number }[]) => {
+    const w = worldRef.current!;
+    const unique = tiles.filter((tile, index) => tiles.findIndex((other) => other.x === tile.x && other.y === tile.y) === index);
+    if (!unique.length) return { ok: false, reason: "Select a path line first.", built: 0 };
+    let built = 0;
+    for (const tile of unique) {
+      const check = canBuildCampusPath(w, tile);
+      if (!check.ok) return { ok: false, reason: check.reason, built };
+      w.player.cash -= CAMPUS_PATH_COST;
+      w.player.campusPaths.push(tile);
+      built += 1;
+    }
+    rerender();
+    return { ok: true, reason: "", built };
+  }, [rerender]);
+
 
   const retoolFactory = useCallback((roomId: string, productKey: string) => {
     const w = worldRef.current!;
@@ -629,6 +645,6 @@ export function useGame() {
     setPackaging, setProductPrice, setProductQuality, setProductionSetup, retargetProduct, releaseProduct, discardProduct, setIP, createIP, licenseIP,
     setMarketing, setBrandMarketing, setBackOffice, setFocus, selectCell, commission, borrow, repay,
     saveSegment, deleteSegment, updateSegment, launchCampaign, startResearch,
-    hireCandidate, startRecruitingSearch, promotePersonnel, firePersonnel, setVision, createBrand, startCategoryExpansion, startIndustryEntry, updateOperatingRooms, buildOperatingRoom, buildCampusPath, demolishOperatingRoom, upgradeOperatingRoom, retoolFactory, installWarehouseModule,
+    hireCandidate, startRecruitingSearch, promotePersonnel, firePersonnel, setVision, createBrand, startCategoryExpansion, startIndustryEntry, updateOperatingRooms, buildOperatingRoom, buildCampusPath, buildCampusPathLine, demolishOperatingRoom, upgradeOperatingRoom, retoolFactory, installWarehouseModule,
   };
 }

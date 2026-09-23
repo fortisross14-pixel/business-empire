@@ -11,7 +11,7 @@ import type {
 import { archetypeByKey } from "../engine/productCatalog";
 import { brandById, ensureBrandVisual } from "../engine/brands";
 import { ipById } from "../engine/ip";
-import { C } from "./theme";
+import { C, UI } from "./theme";
 
 function hashString(input: string): number {
   let h = 0;
@@ -51,16 +51,26 @@ function initials(name: string): string {
   return (words[0][0] + words[1][0]).toUpperCase();
 }
 
+function displayShape(shape: BrandLogoShape): BrandLogoShape {
+  if (shape === "diamond") return "hex";
+  if (shape === "triangle") return "circle";
+  if (shape === "capsule") return "square";
+  return shape;
+}
+
+function displayMotif(motif: BrandLogoMotif): BrandLogoMotif {
+  if (motif === "crown" || motif === "star") return "spark";
+  if (motif === "bolt") return "stripe";
+  return motif;
+}
+
 function shapeStyle(shape: BrandLogoShape, size: number): React.CSSProperties {
-  const base: React.CSSProperties = { width: size, height: size, position: "relative", overflow: "hidden", flex: "0 0 auto" };
+  const base: React.CSSProperties = { width: size, height: size, position: "relative", overflow: "hidden", flex: "0 0 auto", boxSizing: "border-box" };
   switch (shape) {
     case "circle": return { ...base, borderRadius: "999px" };
-    case "diamond": return { ...base, borderRadius: 10, transform: "rotate(45deg)" };
-    case "triangle": return { ...base, clipPath: "polygon(50% 0%, 0% 100%, 100% 100%)" };
-    case "shield": return { ...base, borderRadius: "16px 16px 22px 22px", clipPath: "polygon(14% 0%, 86% 0%, 100% 26%, 92% 73%, 50% 100%, 8% 73%, 0% 26%)" };
-    case "capsule": return { ...base, width: Math.round(size * 1.42), borderRadius: 999 };
-    case "hex": return { ...base, clipPath: "polygon(24% 0%, 76% 0%, 100% 50%, 76% 100%, 24% 100%, 0% 50%)" };
-    default: return { ...base, borderRadius: 14 };
+    case "shield": return { ...base, borderRadius: "35% 35% 45% 45%", clipPath: "polygon(12% 0%, 88% 0%, 100% 24%, 92% 76%, 50% 100%, 8% 76%, 0% 24%)" };
+    case "hex": return { ...base, clipPath: "polygon(22% 0%, 78% 0%, 100% 50%, 78% 100%, 22% 100%, 0% 50%)" };
+    default: return { ...base, borderRadius: UI.radius.md };
   }
 }
 
@@ -86,15 +96,17 @@ function motifNode(motif: BrandLogoMotif, accent: string, text: string, size: nu
 
 export function BrandLogoMark({ brand, size = 42, withName = false, emphasize = false }: { brand: Brand; size?: number; withName?: boolean; emphasize?: boolean }) {
   const safe = ensureBrandVisual({ ...brand });
-  const shape = safe.visual!.shape;
+  const shape = displayShape(safe.visual!.shape);
   const textColor = toneText(safe.color);
   const accent = safe.visual!.accentColor;
+  const motif = displayMotif(safe.visual!.motif);
   const baseSize = size;
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-      <div style={{ ...shapeStyle(shape, baseSize), background: `linear-gradient(180deg, ${mix(safe.color, "#ffffff", 0.15)} 0%, ${safe.color} 100%)`, boxShadow: emphasize ? `0 10px 22px ${mix(safe.color, "#000000", .55)}55` : `0 6px 14px ${mix(safe.color, "#000000", .58)}33`, border: `1px solid ${mix(safe.color, "#ffffff", .32)}` }}>
-        {motifNode(safe.visual!.motif, accent, textColor, baseSize)}
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: textColor, fontWeight: 900, letterSpacing: safe.visual!.textLayout === "wide" ? 1.2 : .3, fontSize: safe.visual!.textLayout === "monogram" ? baseSize * .30 : baseSize * .22, transform: shape === "diamond" ? "rotate(-45deg)" : undefined, textAlign: "center", lineHeight: 1.02, textShadow: "0 1px 1px rgba(0,0,0,.12)" }}>
+      <div style={{ ...shapeStyle(shape, baseSize), background: `linear-gradient(145deg, ${mix(safe.color, "#ffffff", 0.2)} 0%, ${safe.color} 74%, ${mix(safe.color, "#000000", .12)} 100%)`, boxShadow: emphasize ? `0 10px 22px ${mix(safe.color, "#000000", .55)}44` : `0 5px 12px ${mix(safe.color, "#000000", .58)}22`, border: `1px solid ${mix(safe.color, "#ffffff", .38)}` }}>
+        <div style={{ position: "absolute", inset: "14%", border: `1px solid ${mix(accent, textColor, .35)}88`, borderRadius: "inherit", opacity: .72 }} />
+        {motifNode(motif, accent, textColor, baseSize)}
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: textColor, fontWeight: 900, letterSpacing: .5, fontSize: Math.max(9, baseSize * .29), textAlign: "center", lineHeight: 1.02, textShadow: "0 1px 1px rgba(0,0,0,.12)" }}>
           {safe.visual!.textLayout === "stacked"
             ? <span>{safe.name.split(/\s+/).slice(0, 2).map((w, i) => <React.Fragment key={i}>{w.slice(0, i === 0 ? 3 : 4).toUpperCase()}{i === 0 ? <br /> : null}</React.Fragment>)}</span>
             : initials(safe.name)}
@@ -338,30 +350,24 @@ export function ProductVisualCard({ world, sku, size = 88, showLabels = true }: 
   const kind = baseKindForProductKey(sku.productKey);
   const theme = productTheme(sku.productKey, brand.color, accentColor, sku.packaging);
   return <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
-    <div style={{ width: cardW, height: size, borderRadius: 18, background: "linear-gradient(180deg,#ffffff 0%,#f7faff 100%)", border: frame.border, boxShadow: frame.glow, position: "relative", overflow: "hidden", flex: "0 0 auto" }}>
+    <div style={{ width: cardW, height: size, borderRadius: UI.radius.lg, background: "linear-gradient(180deg,#ffffff 0%,#f7faff 100%)", border: frame.border, boxShadow: frame.glow, position: "relative", overflow: "hidden", flex: "0 0 auto" }}>
       <div style={{ position: "absolute", inset: 0, background: ip ? `linear-gradient(160deg, ${mix(brand.color, '#ffffff', .82)} 0%, #ffffff 36%, ${mix(deriveIPPalette(ip)[0], '#ffffff', .7)} 100%)` : `linear-gradient(180deg,#ffffff 0%, ${mix(brand.color, '#ffffff', .9)} 100%)` }} />
       <div style={{ position: "absolute", inset: "28px 10px 8px", display: "grid", placeItems: "center" }}>
         <div style={{ position: "relative" }}>
           {productHero(kind, { base: theme.base, accent: theme.accent, text: textColor }, size * .62)}
-          <div style={{ position: "absolute", inset: 0 }}>
-            <PackageBrandHeader label={brand.name} color={brand.color} textColor={textColor} />
-            {ip ? <PackageIPSticker label={ip.name} a={deriveIPPalette(ip)[0]} b={deriveIPPalette(ip)[1]} /> : null}
-            <div style={{ position: "absolute", inset: 0, boxShadow: `inset 0 0 0 1px ${frame.foil}22` }} />
-          </div>
+          <div style={{ position: "absolute", inset: 0, boxShadow: `inset 0 0 0 1px ${frame.foil}22` }} />
         </div>
       </div>
       <div style={{ position: "absolute", left: 8, right: 8, top: 8, display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, background: brand.color, borderRadius: 10, padding: "4px 6px" }}>
-          <div style={{ width: 18, height: 18, transform: brand.visual?.shape === "diamond" ? "scale(.7) rotate(45deg)" : undefined }}>
-            <BrandLogoMark brand={brand} size={18} />
-          </div>
-          <span style={{ color: textColor, fontSize: 9.5, fontWeight: 900, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: size * .34 }}>{brand.name}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, background: "rgba(255,255,255,.88)", border: `1px solid ${mix(brand.color, "#ffffff", .55)}`, borderRadius: UI.radius.sm, padding: "3px 5px", boxShadow: "0 2px 6px rgba(23,37,54,.08)" }}>
+          <BrandLogoMark brand={brand} size={16} />
+          <span style={{ color: C.ink, fontSize: 8.5, fontWeight: 900, letterSpacing: .2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: size * .34 }}>{brand.name}</span>
         </div>
         {sku.ipId && ip && <div style={{ fontSize: 8.5, fontWeight: 900, color: deriveIPPalette(ip)[0], background: "rgba(255,255,255,.85)", border: `1px solid ${mix(deriveIPPalette(ip)[0], '#ffffff', .4)}`, borderRadius: 999, padding: "3px 5px", whiteSpace: "nowrap" }}>{ip.name}</div>}
       </div>
       <div style={{ position: "absolute", left: 8, right: 8, bottom: 8, display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
         <div style={{ fontSize: 9.5, fontWeight: 900, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{archetypeByKey(sku.productKey)?.label ?? sku.productKey}</div>
-        <div style={{ color: sku.manufacturingStars && sku.manufacturingStars >= 5 ? "#d08f12" : sku.manufacturingStars && sku.manufacturingStars >= 4 ? C.violet : C.dim, fontSize: 9.5, fontWeight: 800 }}>{"★".repeat(Math.max(1, Math.min(5, sku.manufacturingStars ?? 3)))}</div>
+        <div style={{ color: sku.manufacturingStars && sku.manufacturingStars >= 5 ? "#c48b1a" : sku.manufacturingStars && sku.manufacturingStars >= 4 ? C.violet : C.dim, fontSize: 9.5, fontWeight: 800, letterSpacing: 1 }}>{"★".repeat(Math.max(1, Math.min(5, sku.manufacturingStars ?? 3)))}</div>
       </div>
     </div>
     {showLabels && <div style={{ minWidth: 0 }}><div style={{ color: C.ink, fontWeight: 800, fontSize: 13.5 }}>{sku.name}</div><div style={{ color: C.faint, fontSize: 10.5 }}>{brand.name}{ip ? ` × ${ip.name}` : ""}</div></div>}

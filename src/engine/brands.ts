@@ -39,9 +39,9 @@ export function brandPositioningFit(w: World, brandId: string, cell: Cell, produ
 }
 
 
-const BRAND_SHAPES: BrandLogoShape[] = ["square", "circle", "diamond", "shield", "capsule", "hex", "triangle"];
-const BRAND_MOTIFS: BrandLogoMotif[] = ["stripe", "star", "bolt", "orbit", "crown", "leaf", "spark"];
-const BRAND_LAYOUTS: BrandLogoLayout[] = ["monogram", "stacked", "wide"];
+const BRAND_SHAPES: BrandLogoShape[] = ["square", "circle", "hex", "shield"];
+const BRAND_MOTIFS: BrandLogoMotif[] = ["orbit", "stripe", "spark", "leaf"];
+const BRAND_LAYOUTS: BrandLogoLayout[] = ["monogram", "monogram", "stacked"];
 
 function hashString(input: string): number {
   let h = 0;

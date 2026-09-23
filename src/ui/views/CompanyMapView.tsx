@@ -110,12 +110,13 @@ function roomHeight(room: Room) {
   return 36;
 }
 
-export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, buildPath, demolishRoom, upgradeRoom, retoolFactory, installWarehouseModule, onNavigate }: {
+export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, buildPath, buildPathLine, demolishRoom, upgradeRoom, retoolFactory, installWarehouseModule, onNavigate }: {
   world: World;
   openCreator: () => void;
   updateRooms: (rooms: OperatingRoom[]) => void;
   buildRoom: (room: OperatingRoom) => boolean;
   buildPath: (x: number, y: number) => { ok: boolean; reason?: string };
+  buildPathLine: (tiles: { x: number; y: number }[]) => { ok: boolean; reason?: string; built: number };
   demolishRoom: (roomId: string) => void;
   upgradeRoom: (roomId: string) => { ok: boolean; reason?: string };
   retoolFactory: (roomId: string, productKey: string) => boolean;
@@ -135,10 +136,13 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   const [message, setMessage] = useState("Start from the entrance: build a path, then place your first office beside it.");
   const [visualClock, setVisualClock] = useState(Date.now());
   const [buildFx, setBuildFx] = useState<{ id: string; until: number } | null>(null);
+  const [pathDraft, setPathDraft] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
   const [compact, setCompact] = useState(false);
   const drag = useRef<{ active: boolean; moved: boolean; x: number; y: number }>({ active: false, moved: false, x: 0, y: 0 });
+  const pathStart = useRef<{ x: number; y: number } | null>(null);
   const roomsCountRef = useRef(rooms.length);
-  useEffect(() => { roomsCountRef.current = rooms.length; }, [rooms.length]);
+  const roomsRef = useRef(rooms);
+  useEffect(() => { roomsCountRef.current = rooms.length; roomsRef.current = rooms; }, [rooms]);
 
   useEffect(() => {
     const id = window.setInterval(() => setVisualClock(Date.now()), 250);
@@ -149,21 +153,21 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
     const apply = () => {
       const width = window.innerWidth;
       const isCompact = width < 980;
-      const zoom = width < 430 ? .48 : width < 600 ? .54 : isCompact ? .62 : .72;
+      const zoom = width < 430 ? .42 : width < 600 ? .48 : isCompact ? .58 : .68;
       setCompact(isCompact);
-      if (roomsCountRef.current === 0) {
-        // On an empty lot, frame the one thing the player can act from: the campus entrance.
-        const targetX = width * (isCompact ? .40 : .34);
-        const targetY = Math.max(250, window.innerHeight * (isCompact ? .56 : .62));
-        const gx = CAMPUS_ENTRANCE.x + .5, gy = CAMPUS_ENTRANCE.y + .5;
-        setCamera({ x: targetX - (gx - gy) * (TW / 2) * zoom, y: targetY - (gx + gy) * (TH / 2) * zoom, zoom });
-      } else {
-        setCamera((c) => ({ ...c, x: Math.max(width < 600 ? 150 : 230, width * 0.53), zoom }));
-      }
+      const activeRooms = roomsRef.current;
+      const bounds = activeRooms.reduce((box, room) => ({
+        minX: Math.min(box.minX, room.x), minY: Math.min(box.minY, room.y),
+        maxX: Math.max(box.maxX, room.x + room.w), maxY: Math.max(box.maxY, room.y + room.h),
+      }), { minX: CAMPUS_ENTRANCE.x, minY: CAMPUS_ENTRANCE.y, maxX: CAMPUS_ENTRANCE.x + 1, maxY: CAMPUS_ENTRANCE.y + 1 });
+      const gx = (bounds.minX + bounds.maxX) / 2, gy = (bounds.minY + bounds.maxY) / 2;
+      const targetX = width * (isCompact ? .50 : .53);
+      const targetY = Math.max(175, (wrapRef.current?.clientHeight || window.innerHeight - 92) * (isCompact ? .60 : .58));
+      setCamera({ x: targetX - (gx - gy) * (TW / 2) * zoom, y: targetY - (gx + gy) * (TH / 2) * zoom, zoom });
     };
     apply(); window.addEventListener("resize", apply);
     return () => window.removeEventListener("resize", apply);
-  }, []);
+  }, [rooms.length]);
 
   const selected = rooms.find((r) => r.id === selectedId) ?? null;
   const productRooms = rooms.filter((r) => r.kind === "office" && (r.team === "product" || r.id === "founder-office") && r.productKey);
@@ -245,8 +249,9 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
     ctx.clearRect(0, 0, width, height);
 
     const bg = ctx.createLinearGradient(0, 0, 0, height);
-    bg.addColorStop(0, "#e9f0ea");
-    bg.addColorStop(1, "#dfe8e2");
+    bg.addColorStop(0, "#eef3f2");
+    bg.addColorStop(.58, "#e5eceb");
+    bg.addColorStop(1, "#d9e3e2");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
@@ -266,21 +271,27 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
 
     // Empty grass parcel. Paths are player-built from the fixed entrance.
     for (let y = 0; y < MAP; y++) for (let x = 0; x < MAP; x++) {
-      drawDiamond(x, y, (x + y) % 2 ? "#e8f0e9" : "#e4ede6", "#d8e3da", 0.92);
+      drawDiamond(x, y, (x + y) % 2 ? "#e8efed" : "#e3ebe8", "#ccd9d5", 0.9);
     }
-    for (const path of paths) drawDiamond(path.x, path.y, (path.x + path.y) % 2 ? "#d6d9dc" : "#cbd0d4", "#b8bec4", 1);
+    for (const path of paths) drawDiamond(path.x, path.y, (path.x + path.y) % 2 ? "#cbd5dc" : "#bfcbd3", "#8797a2", 1);
+    ctx.save();
+    const lot = [iso(0, 0, camera.x, camera.y, camera.zoom), iso(MAP, 0, camera.x, camera.y, camera.zoom), iso(MAP, MAP, camera.x, camera.y, camera.zoom), iso(0, MAP, camera.x, camera.y, camera.zoom)];
+    ctx.beginPath(); lot.forEach((point, index) => index ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y)); ctx.closePath();
+    ctx.strokeStyle = "rgba(45,65,78,.48)"; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
     // Campus entrance is the one piece of infrastructure present on day one.
     const entrance = iso(CAMPUS_ENTRANCE.x + .5, CAMPUS_ENTRANCE.y + .5, camera.x, camera.y, camera.zoom);
     ctx.save();
-    ctx.fillStyle = "rgba(17,42,67,.90)"; roundedRect(ctx, entrance.x - 42 * camera.zoom, entrance.y - 34 * camera.zoom, 84 * camera.zoom, 24 * camera.zoom, 6 * camera.zoom); ctx.fill();
-    ctx.fillStyle = "#fff"; ctx.font = `${Math.max(8, 10 * camera.zoom)}px system-ui`; ctx.textAlign = "center"; ctx.fillText("CAMPUS ENTRANCE", entrance.x, entrance.y - 18 * camera.zoom);
+    const entranceLabelW = Math.max(128, 112 * camera.zoom);
+    const entranceLabelX = Math.max(entranceLabelW / 2 + 8, Math.min(width - entranceLabelW / 2 - 8, entrance.x));
+    ctx.fillStyle = "rgba(17,42,67,.94)"; roundedRect(ctx, entranceLabelX - entranceLabelW / 2, entrance.y - 38 * camera.zoom, entranceLabelW, 25 * camera.zoom, 6 * camera.zoom); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.font = `700 ${Math.max(9, 10 * camera.zoom)}px system-ui`; ctx.textAlign = "center"; ctx.fillText("CAMPUS ENTRANCE", entranceLabelX, entrance.y - 21 * camera.zoom);
     ctx.restore();
 
     // Concrete apron around every facility makes the campus read as a place, not loose boxes.
     for (const room of rooms) {
       for (let yy = room.y - 1; yy <= room.y + room.h; yy++) {
         for (let xx = room.x - 1; xx <= room.x + room.w; xx++) {
-          if (xx >= 0 && yy >= 0 && xx < MAP && yy < MAP) drawDiamond(xx, yy, "#edf0f1", "#d8dcdf", .88);
+          if (xx >= 0 && yy >= 0 && xx < MAP && yy < MAP) drawDiamond(xx, yy, "#e9eeee", "#c8d1d1", .94);
         }
       }
     }
@@ -370,6 +381,11 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       let assetTopY: number | null = null;
 
       ctx.save();
+      const foundation = iso(room.x + room.w / 2, room.y + room.h, camera.x, camera.y, camera.zoom);
+      ctx.fillStyle = selectedNow ? "rgba(83,103,201,.16)" : "rgba(47,63,71,.11)";
+      ctx.beginPath();
+      ctx.ellipse(foundation.x, foundation.y + 4 * camera.zoom, Math.max(22, (room.w + room.h) * 8 * camera.zoom), Math.max(7, (room.w + room.h) * 2.2 * camera.zoom), 0, 0, Math.PI * 2);
+      ctx.fill();
       if (hasAsset && assetImg) {
         const base = iso(room.x + room.w / 2, room.y + room.h, camera.x, camera.y, camera.zoom);
         const projectedWidth = (room.w + room.h) * (TW / 2) * camera.zoom;
@@ -383,8 +399,9 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
         ctx.drawImage(assetImg, dx, dy, drawW, drawH);
         ctx.shadowColor = "transparent";
         if (selectedNow) {
-          ctx.strokeStyle = C.violet; ctx.lineWidth = 2;
+          ctx.strokeStyle = C.violet; ctx.lineWidth = 2.5;
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.closePath(); ctx.stroke();
+          ctx.fillStyle = "rgba(83,103,201,.08)"; ctx.fill();
         }
       } else {
       ctx.shadowColor = selectedNow ? "rgba(124,58,237,.28)" : "rgba(30,41,59,.18)";
@@ -486,8 +503,11 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
     }
 
     if (tool === "path") {
-      const check = canBuildCampusPath(world, hover);
-      drawDiamond(hover.x, hover.y, check.ok ? "#dbeafe" : "#fecaca", check.ok ? "#2563eb" : "#dc2626", 0.82);
+      const draftTiles = pathDraft ? straightTiles(pathDraft.start, pathDraft.end) : [hover];
+      for (const tile of draftTiles) {
+        const check = canBuildCampusPath(world, tile);
+        drawDiamond(tile.x, tile.y, check.ok ? "#b9e7d2" : "#fecaca", check.ok ? "#0f8a62" : "#dc2626", 0.88);
+      }
     } else if (tool !== "select" && tool !== "navigate") {
       const [w, h] = ROOM_META[tool].size;
       const candidate = { x: hover.x, y: hover.y, w, h };
@@ -495,7 +515,17 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       const valid = hover.x >= 0 && hover.y >= 0 && hover.x + w <= MAP && hover.y + h <= MAP && !rooms.some((r) => overlaps(candidate, r)) && !coversPath && roomTouchesConnectedPath(world, candidate);
       for (let yy = hover.y; yy < hover.y + h; yy++) for (let xx = hover.x; xx < hover.x + w; xx++) if (xx >= 0 && yy >= 0 && xx < MAP && yy < MAP) drawDiamond(xx, yy, valid ? "#bbf7d0" : "#fecaca", valid ? "#16a34a" : "#dc2626", 0.73);
     }
-  }, [rooms, paths, selectedId, hover, tool, camera, compact, visualClock, buildFx, world.tick, world.live, world.player.skus, world.player.personnel, companyBrand.color]);
+  }, [rooms, paths, selectedId, hover, tool, camera, compact, visualClock, buildFx, pathDraft, world.tick, world.live, world.player.skus, world.player.personnel, companyBrand.color]);
+
+  function straightTiles(start: { x: number; y: number }, end: { x: number; y: number }) {
+    const horizontal = Math.abs(end.x - start.x) >= Math.abs(end.y - start.y);
+    const finish = horizontal ? { x: end.x, y: start.y } : { x: start.x, y: end.y };
+    const length = Math.max(Math.abs(finish.x - start.x), Math.abs(finish.y - start.y));
+    return Array.from({ length: length + 1 }, (_, index) => ({
+      x: start.x + (finish.x === start.x ? 0 : Math.sign(finish.x - start.x) * index),
+      y: start.y + (finish.y === start.y ? 0 : Math.sign(finish.y - start.y) * index),
+    }));
+  }
 
   const pickRoom = (tileX: number, tileY: number) => [...rooms].reverse().find((r) => tileX >= r.x && tileX < r.x + r.w && tileY >= r.y && tileY < r.y + r.h);
 
@@ -526,7 +556,8 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
 
   const place = (kind: BuildTool, x: number, y: number) => {
     if (kind === "path") {
-      const result = buildPath(x, y);
+      const existing = new Set(paths.map((path) => `${path.x},${path.y}`));
+      const result = buildPathLine(straightTiles(pathStart.current ?? { x, y }, { x, y }).filter((tile) => !existing.has(`${tile.x},${tile.y}`)));
       setMessage(result.ok ? `Path extended · ${fmtMoney(CAMPUS_PATH_COST)}.` : result.reason ?? "Path cannot be built there.");
       return;
     }
@@ -580,30 +611,40 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
 
   const resetCamera = () => {
     const width = wrapRef.current?.clientWidth ?? 900;
-    const zoom = width < 430 ? .48 : width < 600 ? .54 : compact ? .62 : .72;
-    if (rooms.length === 0) {
-      const targetX = width * (compact ? .40 : .34);
-      const targetY = Math.max(250, (wrapRef.current?.clientHeight ?? window.innerHeight) * (compact ? .56 : .62));
-      const gx = CAMPUS_ENTRANCE.x + .5, gy = CAMPUS_ENTRANCE.y + .5;
-      setCamera({ x: targetX - (gx - gy) * (TW / 2) * zoom, y: targetY - (gx + gy) * (TH / 2) * zoom, zoom });
-    } else setCamera({ x: Math.max(width < 600 ? 150 : 230, width * .53), y: compact ? 16 : 28, zoom });
+    const zoom = width < 430 ? .42 : width < 600 ? .48 : compact ? .58 : .68;
+    const bounds = rooms.reduce((box, room) => ({
+      minX: Math.min(box.minX, room.x), minY: Math.min(box.minY, room.y),
+      maxX: Math.max(box.maxX, room.x + room.w), maxY: Math.max(box.maxY, room.y + room.h),
+    }), { minX: CAMPUS_ENTRANCE.x, minY: CAMPUS_ENTRANCE.y, maxX: CAMPUS_ENTRANCE.x + 1, maxY: CAMPUS_ENTRANCE.y + 1 });
+    const gx = (bounds.minX + bounds.maxX) / 2, gy = (bounds.minY + bounds.maxY) / 2;
+    const targetX = width * (compact ? .50 : .53);
+    const targetY = Math.max(175, (wrapRef.current?.clientHeight ?? window.innerHeight) * (compact ? .60 : .58));
+    setCamera({ x: targetX - (gx - gy) * (TW / 2) * zoom, y: targetY - (gx + gy) * (TH / 2) * zoom, zoom });
   };
 
   return <div style={{ position: "relative", height: "100%", minHeight: compact ? 0 : 520, overflow: "hidden" }}>
     <div ref={wrapRef} style={{ position: "absolute", inset: 0, background: "#e5ece7", overflow: "hidden" }}>
       <canvas ref={canvasRef}
-        onPointerDown={(e) => { drag.current = { active: true, moved: false, x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId); }}
+        onPointerDown={(e) => { const tile = pointerTile(e.clientX, e.clientY, e.currentTarget); drag.current = { active: true, moved: false, x: e.clientX, y: e.clientY }; pathStart.current = tool === "path" ? tile : null; if (tool === "path") setPathDraft({ start: tile, end: tile }); e.currentTarget.setPointerCapture(e.pointerId); }}
         onPointerMove={(e) => {
           const t = pointerTile(e.clientX, e.clientY, e.currentTarget); setHover(t);
           if (!drag.current.active) return;
           const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y;
+          if (tool === "path" && pathStart.current) { const tile = pointerTile(e.clientX, e.clientY, e.currentTarget); setPathDraft({ start: pathStart.current, end: tile }); }
           if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true;
           if ((tool === "select" || tool === "navigate") && drag.current.moved) { setCamera((c) => ({ ...c, x: c.x + dx, y: c.y + dy })); drag.current.x = e.clientX; drag.current.y = e.clientY; }
         }}
         onPointerUp={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-          if (!drag.current.moved) {
+          if (tool === "path") {
+            const start = pathStart.current ?? pointerTile(e.clientX, e.clientY, e.currentTarget);
+            const end = pointerTile(e.clientX, e.clientY, e.currentTarget);
+            const existing = new Set(paths.map((path) => `${path.x},${path.y}`));
+            const result = buildPathLine(straightTiles(start, end).filter((tile) => !existing.has(`${tile.x},${tile.y}`)));
+            setMessage(result.ok ? `${result.built} path tile${result.built === 1 ? "" : "s"} built · ${fmtMoney(result.built * CAMPUS_PATH_COST)}.` : result.reason ?? "Path cannot be built there.");
+            setPathDraft(null); pathStart.current = null;
+          } else if (!drag.current.moved) {
             if (tool === "select" || tool === "navigate") {
               const r = pickRoomAtScreen(sx, sy); setSelectedId(r?.id ?? null);
               setMessage(r ? `${r.name} selected.` : "Empty parcel. Use Build to extend paths or place a connected facility.");

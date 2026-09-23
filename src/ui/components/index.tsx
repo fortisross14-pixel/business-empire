@@ -1,5 +1,5 @@
 import React from "react";
-import { C } from "../theme";
+import { C, UI } from "../theme";
 
 export function LineChart({ series, height = 150, fmt = (v: number) => v.toFixed(0), zeroLine = false, markers = [] }:
   { series: { data: number[]; color: string }[]; height?: number; fmt?: (v: number) => string; zeroLine?: boolean; markers?: { i: number }[] }) {
@@ -25,7 +25,7 @@ export function LineChart({ series, height = 150, fmt = (v: number) => v.toFixed
 }
 
 export const Stat = ({ label, value, color = C.ink, delta }: { label: string; value: string; color?: string; delta?: number }) => (
-  <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#f6faff 100%)", border: `1px solid ${C.line}`, borderRadius: 12, padding: "11px 13px", minWidth: 112, boxShadow: "0 4px 14px rgba(22,53,83,.055), inset 0 1px 0 #fff" }}>
+  <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#f6f9fb 100%)", border: `1px solid ${C.line}`, borderRadius: UI.radius.md, padding: "11px 13px", minWidth: 112, boxShadow: UI.shadow.low }}>
     <div style={{ color: C.dim, fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: .75 }}>{label}</div>
     <div style={{ color, fontSize: 20, fontWeight: 800, fontFamily: "ui-monospace", letterSpacing: -.5 }}>{value}</div>
     {delta != null && <div style={{ color: delta >= 0 ? C.green : C.red, fontSize: 10.5, fontWeight: 750 }}>{delta >= 0 ? "▲" : "▼"} {(Math.abs(delta) * 100).toFixed(1)}%</div>}
@@ -33,7 +33,7 @@ export const Stat = ({ label, value, color = C.ink, delta }: { label: string; va
 );
 
 export const Panel = ({ title, children, style }: { title?: string; children: React.ReactNode; style?: React.CSSProperties }) => (
-  <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#fbfdff 100%)", border: `1px solid ${C.line}`, borderRadius: 15, padding: 18, marginBottom: 14, boxShadow: "0 6px 22px rgba(20,53,84,.065), inset 0 1px 0 rgba(255,255,255,.95)", ...style }}>
+  <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#fbfdff 100%)", border: `1px solid ${C.line}`, borderRadius: UI.radius.lg, padding: 18, marginBottom: 14, boxShadow: UI.shadow.card, ...style }}>
     {title && <div style={{ color: C.ink, fontSize: 14, fontWeight: 850, marginBottom: 13, paddingBottom: 10, borderBottom: `1px solid ${C.grid}`, letterSpacing: -.1 }}>{title}</div>}
     {children}
   </div>
@@ -74,7 +74,7 @@ export const Row = ({ k, v, strong, indent }: { k: string; v: string; strong?: b
 );
 export const Seg = ({ label, opts, val, set }: { label: string; opts: string[]; val: string; set: (v: string) => void }) => (
   <div><div style={{ color: C.faint, fontSize: 10, marginBottom: 4 }}>{label}</div>
-    <div style={{ display: "flex", gap: 3, background: "#eaf1f7", border: `1px solid ${C.line}`, borderRadius: 9, padding: 3, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 3, background: "#e8eef2", border: `1px solid ${C.line}`, borderRadius: UI.radius.md, padding: 3, flexWrap: "wrap" }}>
       {opts.map((o) => <button key={o} onClick={() => set(o)} style={{ background: val === o ? "linear-gradient(180deg,#249eea,#147fc8)" : "transparent", color: val === o ? "#fff" : C.dim, border: "none", borderRadius: 6, padding: "5px 9px", fontSize: 11, fontWeight: 750, cursor: "pointer", boxShadow: val === o ? "0 2px 6px rgba(22,141,226,.20)" : "none" }}>{o}</button>)}
     </div>
   </div>
