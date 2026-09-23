@@ -1,14 +1,16 @@
-import type { SKU, World } from "./types";
+import type { ProductProjectTier, SKU, World } from "./types";
 import { supplierById, supplierSupportsProduct } from "./suppliers";
-import { archetypeByKey, storageProfileForProduct, storageSpaceForProduct } from "./productCatalog";
+import { archetypeByKey, storageProfileForProduct, storageSpaceForProduct, STORAGE_PROFILES } from "./productCatalog";
 import { teamEffectiveness } from "./people";
+import { roleFitsRoom } from "./infrastructure";
+import { hasResearch } from "./research";
 
 const mapped = (w: World, kind: string) => w.player.operatingRooms.filter((r) => r.kind === kind);
 
 export function pmCapacity(w: World): number {
   return mapped(w, "office")
-    .filter((r) => r.team === "product")
-    .reduce((sum, r) => sum + r.capacity, 0);
+    .filter((r) => r.team === "product" || r.id === "founder-office")
+    .reduce((sum, r) => sum + Math.max(0, r.capacity - (r.id === "founder-office" ? 1 : 0)), 0);
 }
 
 export function warehouseUnitCapacity(w: World, productKey?: string): number {
@@ -23,6 +25,7 @@ export function warehouseCapacity(w: World): number {
 }
 
 export function factoryCapacity(w: World, productKey?: string): { onshore: number; offshore: number; total: number } {
+  if (teamEffectiveness(w, "operations") <= 0) return { onshore: 0, offshore: 0, total: 0 };
   const factories = mapped(w, "factory");
   if (!productKey) {
     const total = factories.reduce((sum, r) => sum + r.capacity, 0);
@@ -43,7 +46,11 @@ export function factoryCapacity(w: World, productKey?: string): { onshore: numbe
 }
 
 export function outsourcingCapacity(w: World): number {
-  return mapped(w, "outsourcing").reduce((sum, r) => sum + r.capacity, 0);
+  if (teamEffectiveness(w, "operations") <= 0) return 0;
+  const dedicated = mapped(w, "outsourcing").reduce((sum, r) => sum + r.capacity, 0);
+  const founder = w.player.operatingRooms.find((r) => r.id === "founder-office");
+  const starterSourcing = founder?.assignedPersonnelIds.some((id) => w.player.personnel.find((p) => p.id === id)?.role === "operations") ? 50_000 : 0;
+  return dedicated + starterSourcing;
 }
 
 export function productionCapacity(w: World, method: "own" | "outsource", supplierId?: string | null, productKey?: string): number {
@@ -83,7 +90,7 @@ export function inventoryUsedForStorageProfile(w: World, productKey: string): nu
 }
 
 export function pmAssignments(w: World) {
-  const productRooms = w.player.operatingRooms.filter((r) => r.kind === "office" && r.team === "product");
+  const productRooms = w.player.operatingRooms.filter((r) => r.kind === "office" && (r.team === "product" || r.id === "founder-office"));
   const seated = new Set(productRooms.flatMap((r) => r.assignedPersonnelIds));
   const pms = w.player.personnel.filter((p) => p.role === "product_manager" && seated.has(p.id));
   return pms.map((pm) => {
@@ -92,16 +99,38 @@ export function pmAssignments(w: World) {
   });
 }
 
+
+export function productProjectTierAccess(w: World, tier: ProductProjectTier): { ok: boolean; reason: string } {
+  if (tier === "A") return { ok: true, reason: "" };
+  if (tier === "AA" && !hasResearch(w, "advanced_product_development")) return { ok: false, reason: "Research Advanced Product Development to unlock AA programs." };
+  if (tier === "AAA" && !hasResearch(w, "flagship_product_development")) return { ok: false, reason: "Research Flagship Product Development to unlock AAA programs." };
+  const maxOffice = Math.max(0, ...w.player.operatingRooms.filter((r) => r.kind === "office").map((r) => r.capacity));
+  if (tier === "AA" && maxOffice < 8) return { ok: false, reason: "AA projects require an 8-seat Normal Office or larger." };
+  if (tier === "AAA" && maxOffice < 16) return { ok: false, reason: "AAA projects require a 16-seat Large Office or larger." };
+  return { ok: true, reason: "" };
+}
+
+export function productProjectLockedPeople(w: World): Set<string> {
+  const locked = new Set<string>();
+  for (const sku of w.player.skus) {
+    if (sku.status !== "designing") continue;
+    if (sku.assignedPmId) locked.add(sku.assignedPmId);
+    for (const id of sku.assignedDesignerIds ?? []) locked.add(id);
+  }
+  return locked;
+}
+
 export function canCreateProduct(w: World): { ok: boolean; reason: string } {
-  const productRooms = mapped(w, "office").filter((r) => r.team === "product");
-  if (!productRooms.length) return { ok: false, reason: "Build an office and assign it to Product Management." };
+  if (!w.brands.length) return { ok: false, reason: "Create your first brand before designing a product." };
+  const productRooms = mapped(w, "office").filter((r) => r.team === "product" || r.id === "founder-office");
+  if (!productRooms.length) return { ok: false, reason: "Build your Founder Office or a dedicated Product office first." };
   const pms = w.player.personnel.filter((p) => p.role === "product_manager");
-  if (!pms.length) return { ok: false, reason: "Hire a Product Manager and assign them to a Product Management office." };
+  if (!pms.length) return { ok: false, reason: "Hire a Product Designer and give them an office seat." };
   const seated = new Set(productRooms.flatMap((r) => r.assignedPersonnelIds));
   const eligible = pms.filter((p) => seated.has(p.id));
-  if (!eligible.length) return { ok: false, reason: "Assign a Product Manager to a Product Management office." };
-  const locked = new Set(w.player.skus.filter((s) => s.status === "designing" && s.assignedPmId).map((s) => s.assignedPmId));
-  if (!eligible.some((p) => !locked.has(p.id))) return { ok: false, reason: "All assigned Product Managers are busy designing products." };
+  if (!eligible.length) return { ok: false, reason: "Assign a Product Designer to an open office seat." };
+  const locked = productProjectLockedPeople(w);
+  if (!eligible.some((p) => !locked.has(p.id))) return { ok: false, reason: "All assigned Product Designers are busy on active product projects." };
   return { ok: true, reason: "" };
 }
 
@@ -115,20 +144,32 @@ export function canProduce(
 ): { ok: boolean; reason: string } {
   const cost = qty * unitCost;
   if (w.player.cash < cost) return { ok: false, reason: `Not enough cash (need ${Math.round(cost).toLocaleString()}).` };
+  if (productKey) {
+    const profile = storageProfileForProduct(productKey);
+    if (warehouseUnitCapacity(w, productKey) <= 0) {
+      const label = STORAGE_PROFILES[profile]?.infrastructureLabel ?? profile;
+      return { ok: false, reason: profile === "standard" ? "Build a warehouse before manufacturing this product." : `Build a warehouse and install ${label} before manufacturing this product.` };
+    }
+  }
+  const globalFree = Math.max(0, warehouseUnitCapacity(w) - inventoryUsed(w));
   const free = productKey
-    ? Math.max(0, warehouseUnitCapacity(w, productKey) - inventoryUsedForStorageProfile(w, productKey))
-    : Math.max(0, warehouseUnitCapacity(w) - inventoryUsed(w));
+    ? Math.min(globalFree, Math.max(0, warehouseUnitCapacity(w, productKey) - inventoryUsedForStorageProfile(w, productKey)))
+    : globalFree;
   const requiredSpace = qty * storageSpaceForProduct(productKey ?? "");
   if (requiredSpace > free) return { ok: false, reason: `Warehouse capacity shortfall: ${Math.round(free).toLocaleString()} standard-storage units free.` };
   const cap = productionCapacity(w, method, supplierId, productKey);
-  if (cap <= 0) return { ok: false, reason: method === "own" ? "Build a factory for owned manufacturing." : "Build a Sourcing Office to manage outsourced production." };
+  if (cap <= 0) return { ok: false, reason: method === "own" ? "Owned production requires both a compatible Factory and a seated Sourcing / Operations specialist." : "Hire and seat a Sourcing / Operations specialist. A dedicated Sourcing Office increases capacity later, but people still coordinate the suppliers." };
   if (qty > cap) return { ok: false, reason: `Batch exceeds monthly ${method === "own" ? "factory" : "supplier"} capacity of ${cap.toLocaleString()} units.` };
   return { ok: true, reason: "" };
 }
 
 export function maxManufacturableBatch(w: World, sku: Pick<SKU, "unitCost" | "method" | "supplierId" | "productKey">): number {
   const cashCap = Math.floor(w.player.cash / Math.max(0.01, sku.unitCost));
-  const warehouseFree = Math.max(0, warehouseUnitCapacity(w, sku.productKey) - inventoryUsedForStorageProfile(w, sku.productKey));
+  // Specialized modules unlock handling capability; they do not create a second invisible warehouse.
+  // All profiles still compete for the same physical floor space.
+  const profileFree = Math.max(0, warehouseUnitCapacity(w, sku.productKey) - inventoryUsedForStorageProfile(w, sku.productKey));
+  const globalFree = Math.max(0, warehouseUnitCapacity(w) - inventoryUsed(w));
+  const warehouseFree = Math.min(profileFree, globalFree);
   const storageCap = Math.floor(warehouseFree / Math.max(0.05, storageSpaceForProduct(sku.productKey)));
   const cap = productionCapacity(w, sku.method, sku.supplierId, sku.productKey);
   const raw = Math.max(0, Math.min(cashCap, storageCap, cap));

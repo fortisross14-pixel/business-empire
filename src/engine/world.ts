@@ -1,5 +1,5 @@
-import type { World, Brand, SKU, Competitor, AxisKey, DifficultyId } from "./types";
-import { computeProductRarity, DESIGN_DEPTHS } from "./types";
+import type { World, Brand, SKU, Competitor, AxisKey, DifficultyId, ProductProjectTier } from "./types";
+import { computeProductRarity, DESIGN_DEPTHS, PRODUCT_PROJECT_TIERS } from "./types";
 import { INDUSTRIES, AXES, axisPos, clamp } from "./industries";
 import { buildCube } from "./cube";
 import { deriveUnitCost, deriveQuality } from "./economics";
@@ -24,7 +24,7 @@ export const STUDY_DEFS: Record<string, { label: string; cost: number; ticks: nu
   market_report: { label: "Market Report", cost: 150000, ticks: 30, blurb: "Category growth, competitor count, market concentration (top-3 share, who controls 60%), and directional trends." },
 };
 
-export function initWorld(industryId: string, company: string, brand: Brand, difficulty: DifficultyId = "standard"): World {
+export function initWorld(industryId: string, company: string, brand: Brand | null = null, difficulty: DifficultyId = "standard"): World {
   const difficultyDef = difficultyConfig(difficulty);
   const startCash = difficultyDef.startingCash;
   const cfg = INDUSTRIES[industryId];
@@ -32,10 +32,10 @@ export function initWorld(industryId: string, company: string, brand: Brand, dif
   const cube = primaryMarket.cube;
   const comps = primaryMarket.comps;
 
-  const initialBrand: Brand = ensureBrandVisual({ ...brand, id: brand.id || "brand_0", createdTick: 0, industryId });
+  const initialBrand: Brand | null = brand ? ensureBrandVisual({ ...brand, id: brand.id || "brand_0", createdTick: 0, industryId }) : null;
   const world: World = {
     difficulty, investorConfidence: 1, expectationStrikes: 0,
-    industryId, cfg, tick: 0, company, brands: [initialBrand], primaryBrandId: initialBrand.id, cube, comps,
+    industryId, cfg, tick: 0, company, brands: initialBrand ? [initialBrand] : [], primaryBrandId: initialBrand?.id ?? "", cube, comps,
     player: {
       skus: [], contracts: [], marketing: 0, marketingTarget: 0, marketingFocus: "all",
       brandMarketing: 0, brandMarketingTarget: 0,
@@ -44,10 +44,8 @@ export function initWorld(industryId: string, company: string, brand: Brand, dif
       personnel: [], formerPersonnel: [], talentMarket: [], talentMarketRefreshTick: 0, talentSearch: null,
       expertise: { industry: {}, category: {} },
       vision: null,
-      operatingRooms: [
-        { id: "founder-office", kind: "office", x: 21, y: 20, w: 4, h: 4, name: "Founder's Office", team: "product", productKey: null, skuId: null, assignedPersonnelIds: [], buildCost: 0, monthlyCost: 8_000, capacity: 1, upgradeLevel: 1 },
-        { id: "starter-warehouse", kind: "warehouse", x: 27, y: 22, w: 6, h: 4, name: "Starter Warehouse", team: "operations", productKey: null, skuId: null, assignedPersonnelIds: [], buildCost: 0, monthlyCost: 5_000, capacity: 30_000, upgradeLevel: 1, storageProfiles: ["standard"] },
-      ],
+      operatingRooms: [],
+      campusPaths: [{ x: 2, y: 44 }, { x: 3, y: 44 }],
       unlockedCategories: [...(STARTER_CATEGORIES[industryId] ?? cfg.products.slice(0, 2).map((p) => p.key))],
       categoryExpansionProjects: [],
       businesses: {
@@ -59,6 +57,7 @@ export function initWorld(industryId: string, company: string, brand: Brand, dif
       },
       industryEntryProjects: [],
       corporateCapabilities: { finance: 0, strategy: 0, marketing: 0, operations: 0, retail: 0, people: 0 },
+      research: { completed: [], active: null, lifetimePoints: 0 },
     },
     studies: [], revealed: {}, history: [], events: [],
     chronicle: createChronicle(company, cfg.label, startCash),
@@ -96,6 +95,8 @@ export interface ProductSpec {
   pmId?: string;
   pmName?: string;
   designDepth?: import("./types").DesignDepth;
+  projectTier?: ProductProjectTier;
+  designerIds?: string[];
   testingLevel?: import("./types").ProductTestingLevel;
   designFacets?: Record<string, string>;
   ipId?: string | null;
@@ -112,13 +113,15 @@ export function buildSku(w: World, spec: ProductSpec, id: string, tick = 0, expe
   const supplier = spec.method === "outsource" ? supplierById(supplierId) : null;
   const unitCost = deriveUnitCost(pt, spec.method, mfg.materialQuality, mfg.productionQuality, supplier?.costMult ?? 1, w.materialPriceIndex);
   const quality = deriveQuality(mfg.materialQuality, mfg.productionQuality, supplier?.qualityAdj ?? 0);
-  const depth = spec.designDepth ?? "standard";
+  const projectTier = spec.projectTier ?? (spec.designDepth === "breakthrough" ? "AAA" : spec.designDepth === "advanced" ? "AA" : "A");
+  const tierDef = PRODUCT_PROJECT_TIERS[projectTier];
+  const depth = spec.designDepth ?? (projectTier === "AAA" ? "breakthrough" : projectTier === "AA" ? "advanced" : "standard");
   const depthDef = DESIGN_DEPTHS[depth];
   const faceted = applyFacetSelections(spec.productKey, spec.target, spec.attributes, spec.designFacets);
   const attrSpread = Object.values(faceted.attributes).length > 0
     ? Math.max(...Object.values(faceted.attributes)) - Math.min(...Object.values(faceted.attributes))
     : 0;
-  const designQuality = clamp((0.2 + attrSpread * 0.3 + (spec.pmSkill ?? 0.2) * 0.3 + expertise * 0.04) * depthDef.qualityMult, 0, 1);
+  const designQuality = clamp(Math.min(tierDef.designQualityCap, (0.2 + attrSpread * 0.3 + (spec.pmSkill ?? 0.2) * 0.3 + expertise * 0.04) * depthDef.qualityMult), 0, 1);
   const testingLevel = spec.testingLevel ?? "standard";
   const testDef = TESTING_LEVELS[testingLevel];
   const safetyScore = deriveSafetyScore(spec.productKey, testingLevel, designQuality, quality);
@@ -137,7 +140,9 @@ export function buildSku(w: World, spec: ProductSpec, id: string, tick = 0, expe
     assignedPmName: spec.pmName,
     leadHistory: spec.pmId && spec.pmName ? [{ personId: spec.pmId, personName: spec.pmName, fromTick: tick }] : [],
     designDepth: depth,
-    designDaysLeft: Math.ceil(depthDef.days * testDef.timeMult),
+    projectTier,
+    assignedDesignerIds: [...(spec.designerIds ?? [])],
+    designDaysLeft: Math.ceil(tierDef.baseDays * testDef.timeMult),
     mfgDaysLeft: 0,
     mfgBatchSize: 0,
     // quality

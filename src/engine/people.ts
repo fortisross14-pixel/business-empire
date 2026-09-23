@@ -1,7 +1,8 @@
-import type { IndustryConfig, Personnel, PersonnelAttributes, PersonnelRole, TalentCandidate, TalentSearchMode, World } from "./types";
+import type { IndustryConfig, Personnel, PersonnelAttributes, PersonnelRole, ProductProjectTier, TalentCandidate, TalentSearchMode, World } from "./types";
 import { BASE_SALARIES } from "./types";
 import { recordPeopleEvent } from "./chronicle";
 import { INDUSTRIES } from "./industries";
+import { openSeatCountForRole } from "./infrastructure";
 
 const FIRST_NAMES = [
   "Sarah","Maya","Elena","Priya","Sofia","Nina","Aisha","Hannah","Lucia","Camila","Mei","Grace","Zoe","Amara","Julia","Leila",
@@ -13,19 +14,21 @@ const LAST_NAMES = [
 ];
 
 export const ROLE_LABELS: Record<PersonnelRole, string> = {
-  product_manager: "Product",
+  product_manager: "Product Design",
   finance: "Finance",
   marketing: "Marketing",
   strategy: "Strategy",
-  operations: "Operations",
+  operations: "Sourcing / Operations",
+  innovation: "Innovation / R&D",
 };
 
 const TITLES: Record<PersonnelRole, [string, string, string, string]> = {
-  product_manager: ["Product Manager", "Senior Product Manager", "Director of Product", "VP Product"],
+  product_manager: ["Product Designer", "Senior Product Designer", "Product Lead", "VP Product"],
   finance: ["Financial Analyst", "Finance Manager", "Finance Director", "VP Finance"],
   marketing: ["Marketing Manager", "Senior Marketing Manager", "Marketing Director", "VP Marketing"],
   strategy: ["Strategy Analyst", "Strategy Manager", "Strategy Director", "VP Strategy"],
-  operations: ["Operations Manager", "Senior Operations Manager", "Operations Director", "VP Operations"],
+  operations: ["Sourcing Manager", "Senior Sourcing Manager", "Operations Director", "VP Operations"],
+  innovation: ["Chief Innovation Officer", "Chief Innovation Officer", "Chief Innovation Officer", "Chief Innovation Officer"],
 };
 
 const TRAITS = [
@@ -64,6 +67,7 @@ export function roleEffectiveness(p: Personnel, productKey?: string | null): num
   if (p.role === "finance") score = a.execution * .35 + a.expertise * .35 + a.leadership * .16 + a.commercial * .10 + a.creativity * .04;
   if (p.role === "strategy") score = a.expertise * .30 + a.commercial * .25 + a.leadership * .18 + a.creativity * .17 + a.execution * .10;
   if (p.role === "operations") score = a.execution * .38 + a.leadership * .24 + a.expertise * .20 + a.commercial * .12 + a.creativity * .06;
+  if (p.role === "innovation") score = a.expertise * .31 + a.creativity * .29 + a.leadership * .20 + a.execution * .14 + a.commercial * .06;
   if (productKey && p.specialty === productKey) score += .08;
   return clamp(score);
 }
@@ -79,6 +83,27 @@ export function teamEffectiveness(w: World, role: PersonnelRole): number {
 
 export function productManagerEffectiveness(p: Personnel, productKey: string): number {
   return roleEffectiveness(p, productKey);
+}
+
+export function isProductLead(p: Personnel): boolean {
+  return p.role === "product_manager" && (p.level >= 3 || p.title === "Product Lead" || p.title === "VP Product");
+}
+
+export function productProjectTeamEffectiveness(w: World, tier: ProductProjectTier, productKey: string, leadId: string | null, designerIds: string[]): number {
+  const byId = new Map(w.player.personnel.map((p) => [p.id, p]));
+  if (tier === "A") {
+    const designer = byId.get(leadId ?? designerIds[0] ?? "");
+    return designer ? productManagerEffectiveness(designer, productKey) : 0;
+  }
+  const lead = leadId ? byId.get(leadId) : null;
+  const designers = designerIds.map((id) => byId.get(id)).filter((p): p is Personnel => Boolean(p));
+  if (!lead || !designers.length) return 0;
+  const leadScore = productManagerEffectiveness(lead, productKey);
+  const designerAverage = designers.reduce((sum, p) => sum + productManagerEffectiveness(p, productKey), 0) / designers.length;
+  if (tier === "AA") return clamp(leadScore * .60 + designerAverage * .40);
+  // The lead matters more than any individual designer: 45% of AAA comes from the lead,
+  // while the three designers split the remaining 55% (~18.3% each).
+  return clamp(leadScore * .45 + designerAverage * .55);
 }
 
 function rarityFromSkill(skill: number): Personnel["rarity"] {
@@ -97,6 +122,7 @@ function roleBiasedAttributes(role: PersonnelRole, base: number): PersonnelAttri
   if (role === "finance") { a.execution = clamp(a.execution + .13); a.expertise = clamp(a.expertise + .10); }
   if (role === "strategy") { a.expertise = clamp(a.expertise + .10); a.commercial = clamp(a.commercial + .08); }
   if (role === "operations") { a.execution = clamp(a.execution + .15); a.leadership = clamp(a.leadership + .07); }
+  if (role === "innovation") { a.expertise = clamp(a.expertise + .14); a.creativity = clamp(a.creativity + .14); a.leadership = clamp(a.leadership + .08); }
   return a;
 }
 
@@ -110,7 +136,11 @@ function uniqueName(existing: Set<string>): string {
 
 export function generateCandidate(role: PersonnelRole, cfg: IndustryConfig, companyExpertise: number, existingNames = new Set<string>(), qualityBias = 0): TalentCandidate {
   const levelRoll = Math.random() + companyExpertise * .035 + qualityBias * .65;
-  const level = (levelRoll > 1.30 ? 4 : levelRoll > 1.08 ? 3 : levelRoll > .76 ? 2 : 1) as 1 | 2 | 3 | 4;
+  // Search depth must materially change access to senior talent. Quick searches can occasionally
+  // surface a lead, normal searches do so with meaningful odds, and Deep Search is the reliable
+  // route to directors/executives. These thresholds also prevent AA staffing from becoming a
+  // hidden one-year promotion wall after the technology itself is unlocked.
+  const level = (levelRoll > 1.05 ? 4 : levelRoll > .88 ? 3 : levelRoll > .62 ? 2 : 1) as 1 | 2 | 3 | 4;
   const base = clamp(rand(.28, .58) + companyExpertise * .035 + (level - 1) * .08 + qualityBias, .2, .96);
   const attributes = roleBiasedAttributes(role, base);
   const overall = Object.values(attributes).reduce((a, b) => a + b, 0) / 5;
@@ -141,7 +171,7 @@ export function generateCandidate(role: PersonnelRole, cfg: IndustryConfig, comp
 export function refreshTalentMarket(w: World) {
   const exp = Math.max(w.player.expertise.industry[w.cfg.id] ?? 0, ...Object.values(w.player.expertise.category), 0);
   const names = new Set([...w.player.personnel, ...(w.player.formerPersonnel ?? [])].map((p) => p.name));
-  const roles: PersonnelRole[] = ["product_manager", "finance", "marketing", "strategy", "operations"];
+  const roles: PersonnelRole[] = ["product_manager", "finance", "marketing", "strategy", "operations", "innovation"];
   const candidates: TalentCandidate[] = [];
   for (const role of roles) {
     for (let i = 0; i < 2; i++) {
@@ -195,6 +225,7 @@ export function enrichLegacyPerson(p: Personnel, tick: number, cfg: IndustryConf
 }
 
 export function canPromotePerson(w: World, p: Personnel): { ok: boolean; reason: string } {
+  if (p.role === "innovation") return { ok: false, reason: "Chief Innovation Officer is already an executive role." };
   if ((p.level ?? 1) >= 4) return { ok: false, reason: "Already at VP level." };
   const since = w.tick - Math.max(p.hiredTick ?? 0, p.lastPromotionTick ?? 0);
   if (since < 360) return { ok: false, reason: `Needs ${Math.ceil((360 - since) / 30)} more months at current level.` };
@@ -230,9 +261,9 @@ function performanceTarget(w: World, p: Personnel): number {
   if (!seated) return .34;
   let target = .54 + roleEffectiveness(p) * .24;
   if (p.role === "product_manager") {
-    const led = w.player.skus.filter((s) => s.assignedPmId === p.id);
-    if (led.length) {
-      const impact = led.reduce((sum, s) => sum + s.designQuality * .35 + s.fame * .25 + Math.min(1, s.unitsSoldTotal / 100_000) * .4, 0) / led.length;
+    const projects = w.player.skus.filter((s) => s.assignedPmId === p.id || (s.assignedDesignerIds ?? []).includes(p.id));
+    if (projects.length) {
+      const impact = projects.reduce((sum, s) => sum + s.designQuality * .35 + s.fame * .25 + Math.min(1, s.unitsSoldTotal / 100_000) * .4, 0) / projects.length;
       target += impact * .17;
     }
   }
@@ -240,6 +271,7 @@ function performanceTarget(w: World, p: Personnel): number {
   if (p.role === "operations") target += Math.max(-.08, .08 - Math.min(.16, w.player.lostSales / 500_000));
   if (p.role === "finance" && (w.live?.income.profit ?? 0) > 0) target += .05;
   if (p.role === "strategy" && Object.keys(w.revealed).length > 0) target += .04;
+  if (p.role === "innovation" && ((w.player.research?.completed.length ?? 0) > 0 || Boolean(w.player.research?.active))) target += .06;
   return clamp(target, .2, .94);
 }
 
@@ -290,6 +322,9 @@ export const TALENT_SEARCH_MODES: Record<TalentSearchMode, { label: string; days
 
 export function startTalentSearch(w: World, role: PersonnelRole, industryId: string, mode: TalentSearchMode): { ok: boolean; reason?: string } {
   if (w.player.talentSearch) return { ok: false, reason: "A recruiting search is already in progress." };
+  if (openSeatCountForRole(w, role) <= 0) return { ok: false, reason: "No compatible office seat is open for this role. Expand an office or build another one before recruiting." };
+  if (mode === "online" && !(w.player.research?.completed ?? []).includes("professional_recruiting")) return { ok: false, reason: "Research People & HR Foundations to unlock online searches." };
+  if (mode === "deep" && !(w.player.research?.completed ?? []).includes("executive_search")) return { ok: false, reason: "Research Executive Search to unlock deep searches." };
   const cfg = (awaitIndustry(industryId));
   if (!cfg) return { ok: false, reason: "Unknown industry." };
   const def = TALENT_SEARCH_MODES[mode];

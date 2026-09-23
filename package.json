@@ -1,7 +1,7 @@
 {
   "name": "business-empire",
   "private": true,
-  "version": "0.99.6",
+  "version": "1.0.5",
   "type": "module",
   "scripts": {
     "dev": "vite",

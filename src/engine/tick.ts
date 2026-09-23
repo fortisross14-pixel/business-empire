@@ -22,6 +22,7 @@ import { consumeInventoryLots, maybeTriggerRecall, processInventoryAgeing, produ
 import { ensureIndustryMarket, syncPrimaryMarketFromAliases } from "./markets";
 import { accrueIPRoyaltiesAndDynamics, expireIPContracts, ipAwarenessFloor, ipDemandMultiplier, royaltyCostQuarterly } from "./ip";
 import { productMarketFitForCell, bestFitDiagnosis, partnerRecommendations } from "./productMarketFit";
+import { updateResearch } from "./research";
 import { difficultyConfig } from "./difficulty";
 
 const REF_PRICE = 45;
@@ -125,6 +126,7 @@ export function step(w: World): World {
 
   // ---- corporate / industry-entry foundation ----
   refreshCorporateCapabilities(w);
+  updateResearch(w);
   if (w.player.industryEntryProjects?.length) {
     const speed = industryEntrySpeed(w);
     for (const project of w.player.industryEntryProjects) project.daysLeft = Math.max(0, project.daysLeft - speed);

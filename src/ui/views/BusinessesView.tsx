@@ -1,6 +1,6 @@
 import type { World, IndustryBusiness } from "../../engine/types";
 import { INDUSTRIES } from "../../engine/industries";
-import { canStartIndustryEntry, INDUSTRY_ENTRY_DEFS } from "../../engine/businesses";
+import { canStartIndustryEntry, industryEntrySpeed, INDUSTRY_ENTRY_DEFS } from "../../engine/businesses";
 import { companyScale } from "../../engine/growth";
 import { Panel } from "../components";
 import { CompetitorChip } from "../visualIdentity";
@@ -13,6 +13,7 @@ export function BusinessesView({ world, startIndustryEntry }: { world: World; st
   const projectByIndustry = Object.fromEntries((world.player.industryEntryProjects ?? []).map(p => [p.industryId, p]));
   const caps = world.player.corporateCapabilities;
   const scale = companyScale(world);
+  const entryRate = industryEntrySpeed(world);
   return <div style={{ display: "grid", gap: 16 }}>
     <Panel title="Business Portfolio">
       <div style={{ color: C.dim, fontSize: 12, marginBottom: 12 }}>Compare your businesses at a glance. Each industry has its own customers, competitors and product economics, while cash, people and corporate capabilities are shared across the company.</div>
@@ -59,7 +60,7 @@ export function BusinessesView({ world, startIndustryEntry }: { world: World; st
         return <div key={def.industryId} style={{ borderTop: `1px solid ${C.line}`, padding: "13px 0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 360px" }}><div style={{ fontWeight: 800 }}>{def.label}</div><div style={{ color: C.dim, fontSize: 11.5, marginTop: 4 }}>{def.blurb}</div><div style={{ color: C.faint, fontSize: 10.5, marginTop: 6 }}>{fmtMoney(def.investment)} · {def.days} days · Organic entry</div></div>
-            {done ? <span style={{ color: C.green, fontWeight: 800, fontSize: 11 }}>BUSINESS ESTABLISHED</span> : project ? <span style={{ color: C.cyan, fontWeight: 800, fontSize: 11 }}>{Math.ceil(project.daysLeft)}d remaining</span> : <button disabled={!check.ok} onClick={() => startIndustryEntry(def.industryId)} style={{ background: check.ok ? C.violet : C.panel2, color: check.ok ? "#fff" : C.faint, border: `1px solid ${check.ok ? C.violet : C.line}`, borderRadius: 7, padding: "7px 11px", cursor: check.ok ? "pointer" : "default", fontWeight: 700 }}>Enter {def.label}</button>}
+            {done ? <span style={{ color: C.green, fontWeight: 800, fontSize: 11 }}>BUSINESS ESTABLISHED</span> : project ? <span style={{ color: entryRate>0?C.cyan:C.amber, fontWeight: 800, fontSize: 11 }}>{entryRate>0?`${Math.ceil(project.daysLeft/entryRate)}d estimated`:`PAUSED · Product + Strategy required`}</span> : <button disabled={!check.ok} onClick={() => startIndustryEntry(def.industryId)} style={{ background: check.ok ? C.violet : C.panel2, color: check.ok ? "#fff" : C.faint, border: `1px solid ${check.ok ? C.violet : C.line}`, borderRadius: 7, padding: "7px 11px", cursor: check.ok ? "pointer" : "default", fontWeight: 700 }}>Enter {def.label}</button>}
           </div>
           {project && <div style={{ height: 7, background: C.grid, borderRadius: 5, marginTop: 9 }}><div style={{ width: `${Math.max(0,Math.min(1,progress))*100}%`, height: "100%", background: C.cyan, borderRadius: 5 }} /></div>}
           {!done && !project && !check.ok && <div style={{ color: C.amber, fontSize: 10.5, marginTop: 7 }}>{check.reason}</div>}

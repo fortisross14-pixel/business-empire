@@ -1,6 +1,6 @@
 import { INDUSTRIES } from "./industries";
 import type { World } from "./types";
-import { sanitizeOperatingRooms, syncDerivedDepartments } from "./infrastructure";
+import { officeStageForLevel, sanitizeOperatingRooms, syncDerivedDepartments } from "./infrastructure";
 import { qualityToStars } from "./productDesign";
 import { DEFAULT_SUPPLIER_ID } from "./suppliers";
 import { deriveSkuChannels } from "./distribution";
@@ -15,11 +15,11 @@ import { ensureIPFoundation } from "./ip";
 import { TICKS_PER_YEAR } from "./types";
 import { ensureBrandVisual } from "./brands";
 
-export const SAVE_SCHEMA_VERSION = 13;
+export const SAVE_SCHEMA_VERSION = 17;
 export const AUTOSAVE_KEY = "market-sim:autosave";
 
 interface SaveEnvelopeV10 {
-  version: 13;
+  version: 17;
   savedAt: number;
   world: World;
 }
@@ -109,7 +109,7 @@ function migrateWorld(rawWorld: unknown, version: number): World | null {
   // v5 -> v6: real multi-brand portfolios + category expansion. Legacy saves had one
   // top-level brand and company-wide category equity; wrap both into the initial brand so
   // existing products retain their identity and earned reputation.
-  if (version <= 5 || !world.brands?.length) {
+  if (version <= 5) {
     const legacy = (world as any).brand ?? { name: world.company, color: "#7c3aed", positioning: "mass" };
     const initialBrand = { id: "brand_0", name: legacy.name || world.company, color: legacy.color || "#7c3aed", positioning: legacy.positioning || "mass", createdTick: 0, industryId: world.industryId };
     world.brands = [initialBrand];
@@ -234,7 +234,7 @@ function migrateWorld(rawWorld: unknown, version: number): World | null {
   // Existing active products remain live; new products can hold finished inventory before release.
   world.player.talentSearch = world.player.talentSearch ?? null;
   const founder = world.player.operatingRooms?.find((r) => r.id === "founder-office");
-  if (founder) {
+  if (version <= 11 && founder) {
     founder.team = "product";
     founder.capacity = Math.max(1, founder.assignedPersonnelIds?.length ?? 0);
   }
@@ -242,6 +242,73 @@ function migrateWorld(rawWorld: unknown, version: number): World | null {
     sku.releasedToMarket = sku.releasedToMarket ?? (sku.status === "active");
     sku.version = sku.version ?? 1;
     sku.parentSkuId = sku.parentSkuId ?? null;
+  }
+
+
+  // v13 -> v14: Empty Lot foundation. New companies start with only the campus entrance,
+  // while existing companies receive a connected legacy access road so their current campus
+  // remains usable. Founder offices become 4-seat flexible startup offices (Founder + 3 staff).
+  if (!world.player.campusPaths?.length) {
+    const paths: { x: number; y: number }[] = [];
+    const add = (x: number, y: number) => { if (!paths.some((p) => p.x === x && p.y === y)) paths.push({ x, y }); };
+    add(2, 44); add(3, 44);
+    if ((world.player.operatingRooms ?? []).length) {
+      for (let x = 4; x <= 17; x++) add(x, 44);
+      for (let y = 29; y <= 44; y++) add(17, y);
+      for (let x = 0; x < 48; x++) { add(x, 29); add(x, 30); }
+      for (let y = 0; y < 48; y++) { add(17, y); add(18, y); }
+    }
+    world.player.campusPaths = paths;
+  }
+  if (founder) {
+    founder.capacity = Math.max(4, founder.capacity ?? 4);
+    if (version >= 14) founder.team = founder.team ?? "unassigned";
+  }
+
+  // v14 -> v15: Product team scale + office growth. Existing products infer a project class
+  // from their former development depth. Existing office levels are normalized to the new
+  // 4 -> 8 -> 16 -> 32 -> +8/floor progression without shrinking any legacy capacity.
+  for (const sku of world.player.skus ?? []) {
+    sku.projectTier = sku.projectTier ?? (sku.designDepth === "breakthrough" ? "AAA" : sku.designDepth === "advanced" ? "AA" : "A");
+    sku.assignedDesignerIds = sku.assignedDesignerIds ?? [];
+  }
+  for (const room of world.player.operatingRooms ?? []) {
+    if (room.kind === "office") {
+      room.upgradeLevel = Math.max(1, room.upgradeLevel ?? 1);
+      room.capacity = Math.max(room.capacity ?? 4, officeStageForLevel(room.upgradeLevel).capacity);
+    }
+  }
+
+  // v15 -> v16: Company Development / Research capability tree. Existing companies are
+  // grandfathered only into the capabilities their current assets already prove they possess.
+  if (!world.player.research) world.player.research = { completed: [], active: null, lifetimePoints: 0 };
+  world.player.research.completed = world.player.research.completed ?? [];
+  world.player.research.active = world.player.research.active ?? null;
+  world.player.research.lifetimePoints = world.player.research.lifetimePoints ?? 0;
+  const grant = (id: any) => { if (!world.player.research.completed.includes(id)) world.player.research.completed.push(id); };
+  if (version <= 15) {
+    if ((world.player.skus ?? []).some((sku) => sku.projectTier === "AA" || sku.projectTier === "AAA")) grant("advanced_product_development");
+    if ((world.player.skus ?? []).some((sku) => sku.projectTier === "AAA")) { grant("organizational_scaling"); grant("flagship_product_development"); }
+    const maxOffice = Math.max(0, ...(world.player.operatingRooms ?? []).filter((r) => r.kind === "office").map((r) => r.capacity));
+    if (maxOffice >= 16) grant("organizational_scaling");
+    if (maxOffice >= 32) { grant("organizational_scaling"); grant("corporate_hq"); }
+    if ((world.player.operatingRooms ?? []).some((r) => r.kind === "office" && (r.upgradeLevel ?? 1) >= 5)) grant("vertical_expansion");
+    if ((world.player.operatingRooms ?? []).some((r) => r.kind === "outsourcing")) grant("supplier_management");
+    if ((world.player.operatingRooms ?? []).some((r) => r.kind === "factory")) { grant("supplier_management"); grant("owned_manufacturing"); }
+    if ((world.player.talentSearch?.mode === "online") || (world.player.talentMarket?.length ?? 0) >= 4) grant("professional_recruiting");
+    if ((world.player.talentSearch?.mode === "deep") || (world.player.talentMarket?.length ?? 0) >= 5) { grant("professional_recruiting"); grant("executive_search"); }
+    if ((world.player.intelDept ?? 0) > 0) grant("market_intelligence");
+  }
+
+
+  // v16 -> v17: capability gatekeeping audit. Existing companies keep proven
+  // specialist infrastructure; future research now requires a seated CIO and other
+  // advanced actions require the corresponding people + technology gates.
+  if (version <= 16) {
+    const hasSpecialStorage = (world.player.operatingRooms ?? []).some((r) =>
+      r.kind === "warehouse" && (r.storageProfiles ?? ["standard"]).some((p) => p !== "standard"),
+    );
+    if (hasSpecialStorage) grant("specialized_storage");
   }
 
   // Keep product-lead lineage even after transfers, departures and save migrations.

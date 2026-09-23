@@ -45,8 +45,8 @@ function ChronicleTimeline({ world }: { world: World }) {
 
   return <div>
     <Panel title="📚 Company Chronicle">
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(260px,1.6fr) repeat(3,minmax(110px,.55fr))", gap: 12, alignItems: "stretch" }}>
-        <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.65 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, alignItems: "stretch" }}>
+        <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.65, gridColumn: "1 / -1" }}>
           This is the permanent memory of <b style={{ color: C.ink }}>{world.company}</b>. Routine alerts disappear; launches, people, milestones and turning points stay here for the life of the save.
         </div>
         <MiniStat label="Years played" value={`${Math.floor(world.tick / 360) + 1}`} />

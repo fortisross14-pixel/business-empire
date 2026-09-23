@@ -1,18 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { World, OperatingRoom, OperatingRoomKind, OperatingTeamKind, Personnel, SKU, IndustryBusiness } from "../../engine/types";
+import type { StorageProfileId } from "../../engine/productCatalog";
+import { PRODUCT_PROJECT_TIERS } from "../../engine/types";
 import { C, ctrlBtn, bigBtn, fmtMoney, fmtNum } from "../theme";
-import { facilityUpgradeQuote, OPERATING_ROOM_DEFS, roleFitsTeam } from "../../engine/infrastructure";
+import { CAMPUS_ENTRANCE, CAMPUS_PATH_COST, canBuildCampusPath, facilityUpgradeQuote, officeStageForLevel, OPERATING_ROOM_DEFS, roleFitsRoom, roomTouchesConnectedPath, storageModuleRequirement, WAREHOUSE_MODULE_COST } from "../../engine/infrastructure";
 import { brandById, primaryBrand } from "../../engine/brands";
 import { archetypeByKey, defaultFactoryFamiliesForIndustry, MANUFACTURING_FAMILIES, STORAGE_PROFILES } from "../../engine/productCatalog";
-import { inventoryUsed } from "../../engine/capacity";
+import { canCreateProduct, inventoryUsed } from "../../engine/capacity";
 import { INDUSTRIES } from "../../engine/industries";
 import { campusAssetImage, CAMPUS_ASSETS, roomCampusAsset } from "../campus/assetRegistry";
+import { facilityResearchRequirement, officeUpgradeResearchRequirement } from "../../engine/research";
+import { teamEffectiveness } from "../../engine/people";
 
 const MAP = 48;
 const TW = 54;
 const TH = 27;
 
 type RoomKind = OperatingRoomKind;
+type BuildTool = RoomKind | "path";
 type TeamKind = OperatingTeamKind;
 type Room = OperatingRoom;
 type NavTarget = { top: string; sub: string; label: string };
@@ -32,6 +37,7 @@ const TEAM_LABEL: Record<TeamKind, string> = {
   sales: "Sales & Distribution",
   operations: "Operations",
   strategy: "Corporate Strategy",
+  innovation: "Innovation / R&D",
 };
 
 function iso(x: number, y: number, ox: number, oy: number, zoom: number) {
@@ -93,6 +99,7 @@ function roomNavigation(room: Room): NavTarget {
   if (room.team === "finance") return { top: "fin", sub: "overview", label: "Open finance" };
   if (room.team === "sales") return { top: "ops", sub: "distribution", label: "Open distribution" };
   if (room.team === "strategy") return { top: "mgmt", sub: "strategy", label: "Open strategy" };
+  if (room.team === "innovation") return { top: "mgmt", sub: "research", label: "Open research" };
   return { top: "mgmt", sub: "personnel", label: "Open personnel" };
 }
 
@@ -103,30 +110,35 @@ function roomHeight(room: Room) {
   return 36;
 }
 
-export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, demolishRoom, upgradeRoom, retoolFactory, onNavigate }: {
+export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, buildPath, demolishRoom, upgradeRoom, retoolFactory, installWarehouseModule, onNavigate }: {
   world: World;
   openCreator: () => void;
   updateRooms: (rooms: OperatingRoom[]) => void;
   buildRoom: (room: OperatingRoom) => boolean;
+  buildPath: (x: number, y: number) => { ok: boolean; reason?: string };
   demolishRoom: (roomId: string) => void;
   upgradeRoom: (roomId: string) => { ok: boolean; reason?: string };
   retoolFactory: (roomId: string, productKey: string) => boolean;
+  installWarehouseModule: (roomId: string, profile: StorageProfileId) => { ok: boolean; reason?: string };
   onNavigate: (top: string, sub: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const rooms = world.player.operatingRooms;
+  const paths = world.player.campusPaths ?? [];
   const companyBrand = primaryBrand(world);
   const setRooms = (next: Room[] | ((prev: Room[]) => Room[])) => updateRooms(typeof next === "function" ? next(rooms) : next);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tool, setTool] = useState<RoomKind | "select" | "navigate">("select");
+  const [tool, setTool] = useState<BuildTool | "select" | "navigate">("select");
   const [hover, setHover] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState({ x: 480, y: 28, zoom: 0.72 });
-  const [message, setMessage] = useState("Click a building footprint to inspect it. Drag empty ground to move the campus.");
+  const [message, setMessage] = useState("Start from the entrance: build a path, then place your first office beside it.");
   const [visualClock, setVisualClock] = useState(Date.now());
   const [buildFx, setBuildFx] = useState<{ id: string; until: number } | null>(null);
   const [compact, setCompact] = useState(false);
   const drag = useRef<{ active: boolean; moved: boolean; x: number; y: number }>({ active: false, moved: false, x: 0, y: 0 });
+  const roomsCountRef = useRef(rooms.length);
+  useEffect(() => { roomsCountRef.current = rooms.length; }, [rooms.length]);
 
   useEffect(() => {
     const id = window.setInterval(() => setVisualClock(Date.now()), 250);
@@ -134,21 +146,30 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
   }, []);
 
   useEffect(() => {
-    const apply = () => setCompact(window.innerWidth < 980);
+    const apply = () => {
+      const width = window.innerWidth;
+      const isCompact = width < 980;
+      const zoom = width < 430 ? .48 : width < 600 ? .54 : isCompact ? .62 : .72;
+      setCompact(isCompact);
+      if (roomsCountRef.current === 0) {
+        // On an empty lot, frame the one thing the player can act from: the campus entrance.
+        const targetX = width * (isCompact ? .40 : .34);
+        const targetY = Math.max(250, window.innerHeight * (isCompact ? .56 : .62));
+        const gx = CAMPUS_ENTRANCE.x + .5, gy = CAMPUS_ENTRANCE.y + .5;
+        setCamera({ x: targetX - (gx - gy) * (TW / 2) * zoom, y: targetY - (gx + gy) * (TH / 2) * zoom, zoom });
+      } else {
+        setCamera((c) => ({ ...c, x: Math.max(width < 600 ? 150 : 230, width * 0.53), zoom }));
+      }
+    };
     apply(); window.addEventListener("resize", apply);
     return () => window.removeEventListener("resize", apply);
   }, []);
 
-  useEffect(() => {
-    const width = wrapRef.current?.clientWidth;
-    if (width) setCamera((c) => ({ ...c, x: Math.max(230, width * 0.53) }));
-  }, [compact]);
-
   const selected = rooms.find((r) => r.id === selectedId) ?? null;
-  const productRooms = rooms.filter((r) => r.kind === "office" && r.team === "product" && r.productKey);
+  const productRooms = rooms.filter((r) => r.kind === "office" && (r.team === "product" || r.id === "founder-office") && r.productKey);
   const hasFactory = rooms.some((r) => r.kind === "factory");
   const hasWarehouse = rooms.some((r) => r.kind === "warehouse");
-  const hasSourcing = rooms.some((r) => r.kind === "outsourcing");
+  const hasSourcing = rooms.some((r) => r.kind === "outsourcing") || Boolean(rooms.find((r) => r.id === "founder-office")?.assignedPersonnelIds.some((id) => world.player.personnel.find((p) => p.id === id)?.role === "operations"));
   const totalBuildCost = rooms.reduce((sum, r) => sum + r.buildCost, 0);
   const monthlyRoomCost = rooms.reduce((sum, r) => sum + r.monthlyCost, 0);
   const warehouseUnits = rooms.filter((r) => r.kind === "warehouse").reduce((a, r) => a + r.capacity, 0);
@@ -162,7 +183,7 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
   const ownBatches = world.player.skus.filter((s) => s.method === "own" && (s.mfgBatchSize ?? 0) > 0);
   const outsourceBatches = world.player.skus.filter((s) => s.method === "outsource" && (s.mfgBatchSize ?? 0) > 0);
   const activeSkus = world.player.skus.filter((s) => s.status === "active");
-  const staffedSeats = rooms.filter((r) => r.kind === "office").reduce((n, r) => n + r.assignedPersonnelIds.length, 0);
+  const staffedSeats = rooms.filter((r) => r.kind === "office").reduce((n, r) => n + r.assignedPersonnelIds.length + (r.id === "founder-office" ? 1 : 0), 0);
   const totalSeats = rooms.filter((r) => r.kind === "office").reduce((n, r) => n + r.capacity, 0);
   const salesPulse = world.live?.totalUnits ?? 0;
   const activeBusinesses = Object.values(world.player.businesses ?? {}).filter((b): b is IndustryBusiness => Boolean(b && b.status === "active"));
@@ -194,14 +215,16 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
       const load = supplierUnits ? Math.min(1, outsourceBatches.reduce((n, s) => n + (s.mfgBatchSize ?? 0), 0) / Math.max(supplierUnits, 1)) : 0;
       return { label: outsourceBatches.length ? `${outsourceBatches.length} supplier batch${outsourceBatches.length > 1 ? "es" : ""}` : "Partners ready", progress: load, tone: outsourceBatches.length ? "active" : "neutral" };
     }
-    const occupancy = room.capacity ? room.assignedPersonnelIds.length / room.capacity : 0;
+    const occupiedSeats = room.assignedPersonnelIds.length + (room.id === "founder-office" ? 1 : 0);
+    const occupancy = room.capacity ? occupiedSeats / room.capacity : 0;
     const linkedSku = room.skuId ? world.player.skus.find((s) => s.id === room.skuId) : null;
     const productSku = linkedSku ?? (room.team === "product" && room.productKey ? world.player.skus.find((s) => s.productKey === room.productKey && s.status === "designing") : null);
     if (productSku?.status === "designing") {
-      const total = productSku.designDepth === "quick" ? 18 : productSku.designDepth === "advanced" ? 75 : productSku.designDepth === "breakthrough" ? 120 : 40;
+      const tier = productSku.projectTier ?? (productSku.designDepth === "breakthrough" ? "AAA" : productSku.designDepth === "advanced" ? "AA" : "A");
+      const total = PRODUCT_PROJECT_TIERS[tier].baseDays;
       return { label: `${productSku.name} · ${Math.max(0, productSku.designDaysLeft)}d`, progress: Math.max(0, Math.min(1, 1 - productSku.designDaysLeft / total)), tone: "active" };
     }
-    return { label: `${room.assignedPersonnelIds.length}/${room.capacity} seats`, progress: occupancy, tone: room.team === "unassigned" ? "warn" : "ok" };
+    return { label: `${occupiedSeats}/${room.capacity} positions`, progress: occupancy, tone: room.id === "founder-office" ? "ok" : room.team === "unassigned" ? "warn" : "ok" };
   };
 
   useEffect(() => {
@@ -210,7 +233,9 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
     if (!canvas || !wrap) return;
     const ratio = window.devicePixelRatio || 1;
     const width = wrap.clientWidth;
-    const height = Math.max(470, Math.min(900, wrap.clientHeight || window.innerHeight - 92));
+    const height = compact
+      ? Math.max(260, wrap.clientHeight || window.innerHeight - 96)
+      : Math.max(470, Math.min(900, wrap.clientHeight || window.innerHeight - 92));
     canvas.width = width * ratio;
     canvas.height = height * ratio;
     canvas.style.width = width + "px";
@@ -239,14 +264,17 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
       ctx.globalAlpha = 1;
     };
 
-    // Grass parcel, service roads and subtle build grid.
-    for (let y = 0; y < MAP; y++) {
-      for (let x = 0; x < MAP; x++) {
-        const road = (x >= 17 && x <= 18) || (y >= 29 && y <= 30);
-        if (road) drawDiamond(x, y, (x + y) % 2 ? "#c9cdd1" : "#c4c8cc", "#bcc1c5");
-        else drawDiamond(x, y, (x + y) % 2 ? "#e8f0e9" : "#e4ede6", "#d8e3da", 0.92);
-      }
+    // Empty grass parcel. Paths are player-built from the fixed entrance.
+    for (let y = 0; y < MAP; y++) for (let x = 0; x < MAP; x++) {
+      drawDiamond(x, y, (x + y) % 2 ? "#e8f0e9" : "#e4ede6", "#d8e3da", 0.92);
     }
+    for (const path of paths) drawDiamond(path.x, path.y, (path.x + path.y) % 2 ? "#d6d9dc" : "#cbd0d4", "#b8bec4", 1);
+    // Campus entrance is the one piece of infrastructure present on day one.
+    const entrance = iso(CAMPUS_ENTRANCE.x + .5, CAMPUS_ENTRANCE.y + .5, camera.x, camera.y, camera.zoom);
+    ctx.save();
+    ctx.fillStyle = "rgba(17,42,67,.90)"; roundedRect(ctx, entrance.x - 42 * camera.zoom, entrance.y - 34 * camera.zoom, 84 * camera.zoom, 24 * camera.zoom, 6 * camera.zoom); ctx.fill();
+    ctx.fillStyle = "#fff"; ctx.font = `${Math.max(8, 10 * camera.zoom)}px system-ui`; ctx.textAlign = "center"; ctx.fillText("CAMPUS ENTRANCE", entrance.x, entrance.y - 18 * camera.zoom);
+    ctx.restore();
 
     // Concrete apron around every facility makes the campus read as a place, not loose boxes.
     for (const room of rooms) {
@@ -278,9 +306,11 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
       { id: "landscaping" as const, x: 5, y: 32, w: 4, h: 4, opacity: .9 },
       { id: "parking_signage" as const, x: 23, y: 33, w: 4, h: 3, opacity: .86 },
     ];
-    for (const slot of decorSlots) {
-      if (!rooms.some((room) => overlaps({ x: slot.x, y: slot.y, w: slot.w, h: slot.h }, room)))
-        drawCampusSprite(slot.id, slot.x, slot.y, slot.w, slot.h, slot.opacity);
+    if (rooms.length >= 2) {
+      for (const slot of decorSlots) {
+        if (!rooms.some((room) => overlaps({ x: slot.x, y: slot.y, w: slot.w, h: slot.h }, room)))
+          drawCampusSprite(slot.id, slot.x, slot.y, slot.w, slot.h, slot.opacity);
+      }
     }
 
     const drawTruck = (room: Room, idx: number, activity: number) => {
@@ -455,13 +485,17 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
       if (room.kind === "warehouse") drawTruck(room, truckIndex++, inventoryInbound > 0 || salesPulse > 0 ? 1 : 0);
     }
 
-    if (tool !== "select" && tool !== "navigate") {
+    if (tool === "path") {
+      const check = canBuildCampusPath(world, hover);
+      drawDiamond(hover.x, hover.y, check.ok ? "#dbeafe" : "#fecaca", check.ok ? "#2563eb" : "#dc2626", 0.82);
+    } else if (tool !== "select" && tool !== "navigate") {
       const [w, h] = ROOM_META[tool].size;
       const candidate = { x: hover.x, y: hover.y, w, h };
-      const valid = hover.x >= 0 && hover.y >= 0 && hover.x + w <= MAP && hover.y + h <= MAP && !rooms.some((r) => overlaps(candidate, r));
+      const coversPath = paths.some((p) => p.x >= hover.x && p.x < hover.x + w && p.y >= hover.y && p.y < hover.y + h);
+      const valid = hover.x >= 0 && hover.y >= 0 && hover.x + w <= MAP && hover.y + h <= MAP && !rooms.some((r) => overlaps(candidate, r)) && !coversPath && roomTouchesConnectedPath(world, candidate);
       for (let yy = hover.y; yy < hover.y + h; yy++) for (let xx = hover.x; xx < hover.x + w; xx++) if (xx >= 0 && yy >= 0 && xx < MAP && yy < MAP) drawDiamond(xx, yy, valid ? "#bbf7d0" : "#fecaca", valid ? "#16a34a" : "#dc2626", 0.73);
     }
-  }, [rooms, selectedId, hover, tool, camera, compact, visualClock, buildFx, world.tick, world.live, world.player.skus, world.player.personnel, companyBrand.color]);
+  }, [rooms, paths, selectedId, hover, tool, camera, compact, visualClock, buildFx, world.tick, world.live, world.player.skus, world.player.personnel, companyBrand.color]);
 
   const pickRoom = (tileX: number, tileY: number) => [...rooms].reverse().find((r) => tileX >= r.x && tileX < r.x + r.w && tileY >= r.y && tileY < r.y + r.h);
 
@@ -490,20 +524,35 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
     return screenToTile(clientX - rect.left, clientY - rect.top, camera.x, camera.y, camera.zoom);
   };
 
-  const place = (kind: RoomKind, x: number, y: number) => {
+  const place = (kind: BuildTool, x: number, y: number) => {
+    if (kind === "path") {
+      const result = buildPath(x, y);
+      setMessage(result.ok ? `Path extended · ${fmtMoney(CAMPUS_PATH_COST)}.` : result.reason ?? "Path cannot be built there.");
+      return;
+    }
     const meta = ROOM_META[kind];
     const [w, h] = meta.size;
     const candidate = { x, y, w, h };
-    if (x < 0 || y < 0 || x + w > MAP || y + h > MAP || rooms.some((r) => overlaps(candidate, r))) {
-      setMessage("That facility does not fit there."); return;
+    const coversPath = paths.some((p) => p.x >= x && p.x < x + w && p.y >= y && p.y < y + h);
+    if (x < 0 || y < 0 || x + w > MAP || y + h > MAP || rooms.some((r) => overlaps(candidate, r)) || coversPath) {
+      setMessage(coversPath ? "Buildings sit beside paths, not on top of them." : "That facility does not fit there."); return;
     }
+    if (!roomTouchesConnectedPath(world, candidate)) { setMessage("Facilities must touch a path connected to the campus entrance."); return; }
     if (world.player.cash < meta.cost) { setMessage(`Not enough cash to build ${meta.label}.`); return; }
+    const firstOffice = kind === "office" && !rooms.some((r) => r.kind === "office");
     const n = rooms.filter((r) => r.kind === kind).length + 1;
-    const room: Room = { id: `${kind}-${Date.now()}`, kind, x, y, w, h, name: `${meta.label} ${n}`, team: kind === "office" ? "unassigned" : "operations", productKey: null, skuId: null, assignedPersonnelIds: [], buildCost: meta.cost, monthlyCost: meta.monthlyCost, capacity: meta.capacity, upgradeLevel: 1, manufacturingFamilies: kind === "factory" ? defaultFactoryFamiliesForIndustry(world.industryId) : undefined, storageProfiles: kind === "warehouse" ? ["standard"] : undefined };
-    if (!buildRoom(room)) { setMessage(`Not enough cash to build ${meta.label}.`); return; }
+    const room: Room = {
+      id: firstOffice ? "founder-office" : `${kind}-${Date.now()}`, kind, x, y, w, h,
+      name: firstOffice ? "Founder Office" : `${meta.label} ${n}`, team: firstOffice ? "unassigned" : (kind === "office" ? "unassigned" : "operations"),
+      productKey: null, skuId: null, assignedPersonnelIds: [], buildCost: meta.cost, monthlyCost: meta.monthlyCost,
+      capacity: firstOffice ? 4 : meta.capacity, upgradeLevel: 1,
+      manufacturingFamilies: kind === "factory" ? defaultFactoryFamiliesForIndustry(world.industryId) : undefined,
+      storageProfiles: kind === "warehouse" ? ["standard"] : undefined,
+    };
+    if (!buildRoom(room)) { setMessage(`Could not build ${meta.label}. Check cash and path access.`); return; }
     setBuildFx({ id: room.id, until: Date.now() + 4200 });
     setSelectedId(room.id); setTool("select");
-    setMessage(`${meta.label} complete. Its activity and capacity now appear directly on the campus.`);
+    setMessage(firstOffice ? "Founder Office built. One of four positions belongs to you; three staff desks are open." : `${meta.label} complete. Its activity and capacity now appear directly on the campus.`);
   };
 
   const updateSelected = (patch: Partial<Room>) => {
@@ -526,14 +575,21 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
   const selectedStatus = selected ? roomStatus(selected) : null;
   const selectedNav = selected ? roomNavigation(selected) : null;
   const selectedUpgrade = selected ? facilityUpgradeQuote(selected) : null;
+  const selectedUpgradeGate = selected && selectedUpgrade && selected.kind === "office" ? officeUpgradeResearchRequirement(world, selectedUpgrade.nextLevel) : null;
   const warehouseProducts = world.player.skus.filter((s) => s.inventory + (s.mfgBatchSize ?? 0) > 0).sort((a, b) => (b.inventory + (b.mfgBatchSize ?? 0)) - (a.inventory + (a.mfgBatchSize ?? 0))).slice(0, 5);
 
   const resetCamera = () => {
     const width = wrapRef.current?.clientWidth ?? 900;
-    setCamera({ x: Math.max(230, width * .53), y: 28, zoom: compact ? .62 : .72 });
+    const zoom = width < 430 ? .48 : width < 600 ? .54 : compact ? .62 : .72;
+    if (rooms.length === 0) {
+      const targetX = width * (compact ? .40 : .34);
+      const targetY = Math.max(250, (wrapRef.current?.clientHeight ?? window.innerHeight) * (compact ? .56 : .62));
+      const gx = CAMPUS_ENTRANCE.x + .5, gy = CAMPUS_ENTRANCE.y + .5;
+      setCamera({ x: targetX - (gx - gy) * (TW / 2) * zoom, y: targetY - (gx + gy) * (TH / 2) * zoom, zoom });
+    } else setCamera({ x: Math.max(width < 600 ? 150 : 230, width * .53), y: compact ? 16 : 28, zoom });
   };
 
-  return <div style={{ position: "relative", height: "calc(100vh - 72px)", minHeight: 520, overflow: "hidden" }}>
+  return <div style={{ position: "relative", height: "100%", minHeight: compact ? 0 : 520, overflow: "hidden" }}>
     <div ref={wrapRef} style={{ position: "absolute", inset: 0, background: "#e5ece7", overflow: "hidden" }}>
       <canvas ref={canvasRef}
         onPointerDown={(e) => { drag.current = { active: true, moved: false, x: e.clientX, y: e.clientY }; e.currentTarget.setPointerCapture(e.pointerId); }}
@@ -550,25 +606,25 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
           if (!drag.current.moved) {
             if (tool === "select" || tool === "navigate") {
               const r = pickRoomAtScreen(sx, sy); setSelectedId(r?.id ?? null);
-              setMessage(r ? `${r.name} selected.` : "Empty parcel. Drag to pan or open Build to place a facility.");
+              setMessage(r ? `${r.name} selected.` : "Empty parcel. Use Build to extend paths or place a connected facility.");
             } else { const t = pointerTile(e.clientX, e.clientY, e.currentTarget); place(tool, t.x, t.y); }
           }
           drag.current.active = false;
         }}
         style={{ display: "block", cursor: tool === "select" || tool === "navigate" ? "grab" : "crosshair", touchAction: "none" }} />
 
-      <div style={{ position: "absolute", left: 14, top: 14, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "calc(100% - 160px)" }}>
-        <button style={{ ...ctrlBtn, background: tool === "select" ? C.violet : "rgba(255,255,255,.94)", color: tool === "select" ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => { setTool("select"); setMessage("Click a building footprint to inspect it. Drag empty ground to move the campus."); }}>↖ Campus</button>
-        <BuildMenu current={tool} cash={world.player.cash} choose={(kind) => { setTool(kind); setSelectedId(null); setMessage(`Build mode: click an empty parcel to place ${ROOM_META[kind].label.toLowerCase()}.`); }} />
-        <button style={{ ...ctrlBtn, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.max(.42, c.zoom - .08) }))}>−</button>
-        <button style={{ ...ctrlBtn, background: "rgba(255,255,255,.94)" }} onClick={resetCamera}>Center</button>
-        <button style={{ ...ctrlBtn, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.min(1.15, c.zoom + .08) }))}>＋</button>
+      <div style={{ position: "absolute", left: compact ? 7 : 14, top: compact ? 7 : 14, right: compact ? 7 : undefined, display: "flex", gap: compact ? 4 : 6, flexWrap: "wrap", maxWidth: compact ? "none" : "calc(100% - 160px)", zIndex: 6 }}>
+        <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: tool === "select" ? C.violet : "rgba(255,255,255,.94)", color: tool === "select" ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => { setTool("select"); setMessage("Click a building footprint to inspect it. Drag empty ground to move the campus."); }}>↖ {compact ? "Map" : "Campus"}</button>
+        <BuildMenu compact={compact} current={tool} world={world} cash={world.player.cash} hasOffice={rooms.some((r) => r.kind === "office")} choose={(kind) => { setTool(kind); setSelectedId(null); setMessage(kind === "path" ? "Path mode: extend one tile at a time from the campus entrance." : `Build mode: place ${!rooms.some((r) => r.kind === "office") && kind === "office" ? "your 4-seat Founder Office" : ROOM_META[kind].label.toLowerCase()} beside the connected path.`); }} />
+        <button aria-label="Zoom out" style={{ ...ctrlBtn, minWidth: compact ? 40 : undefined, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.max(.38, c.zoom - .08) }))}>−</button>
+        <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={resetCamera}>{compact ? "⌖" : "Center"}</button>
+        <button aria-label="Zoom in" style={{ ...ctrlBtn, minWidth: compact ? 40 : undefined, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.min(1.15, c.zoom + .08) }))}>＋</button>
       </div>
-      <div style={{ position: "absolute", right: 14, top: 14, background: "rgba(17,42,67,.88)", color: "white", borderRadius: 9, padding: "7px 10px", fontSize: 10, fontWeight: 800 }}>◈ {world.company} Campus</div>
-      <div style={{ position: "absolute", left: 14, bottom: 14, maxWidth: 520, background: "rgba(255,255,255,.92)", backdropFilter: "blur(7px)", border: `1px solid ${C.line}`, borderRadius: 9, padding: "7px 10px", color: C.dim, fontSize: 10.5 }}>{message}</div>
+      {!compact && <div style={{ position: "absolute", right: 14, top: 14, background: "rgba(17,42,67,.88)", color: "white", borderRadius: 9, padding: "7px 10px", fontSize: 10, fontWeight: 800 }}>◈ {world.company} Campus</div>}
+      {!compact && <div style={{ position: "absolute", left: 14, bottom: 14, maxWidth: 520, background: "rgba(255,255,255,.92)", backdropFilter: "blur(7px)", border: `1px solid ${C.line}`, borderRadius: 9, padding: "7px 10px", color: C.dim, fontSize: 10.5 }}>{message}</div>}
     </div>
 
-    {selected && <div style={{ position: "absolute", right: 18, top: 68, width: "min(390px,calc(100vw - 36px))", maxHeight: "calc(100vh - 158px)", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.violet}`, borderRadius: 15, padding: 15, boxShadow: "0 18px 44px rgba(17,42,67,.24)", zIndex: 8 }}>
+    {selected && <div style={compact ? { position: "absolute", left: 6, right: 6, bottom: 6, top: "auto", width: "auto", maxHeight: "56%", overflowY: "auto", WebkitOverflowScrolling: "touch", background: "rgba(255,255,255,.99)", border: `1px solid ${C.violet}`, borderRadius: "16px 16px 12px 12px", padding: 12, paddingBottom: "calc(12px + env(safe-area-inset-bottom))", boxShadow: "0 -12px 38px rgba(17,42,67,.25)", zIndex: 8 } : { position: "absolute", right: 18, top: 68, width: "min(390px,calc(100vw - 36px))", maxHeight: "calc(100vh - 158px)", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.violet}`, borderRadius: 15, padding: 15, boxShadow: "0 18px 44px rgba(17,42,67,.24)", zIndex: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
         <div><div style={{ color: C.faint, fontSize: 8.5, fontWeight: 900, letterSpacing: .8 }}>FACILITY</div><div style={{ fontWeight: 900, fontSize: 16, marginTop: 2 }}>{ROOM_META[selected.kind].icon} {selected.name}</div><div style={{ color: C.dim, fontSize: 10.5, marginTop: 3, lineHeight: 1.4 }}>{ROOM_META[selected.kind].description}</div></div>
         <button style={ctrlBtn} onClick={() => setSelectedId(null)}>✕</button>
@@ -576,40 +632,69 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, dem
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6, marginTop: 10 }}>
         <div style={facilityMetric}><span>Status</span><b style={{ color: selectedStatus?.tone === "critical" ? C.red : selectedStatus?.tone === "warn" ? C.amber : C.violet }}>{selectedStatus?.label}</b></div>
         <div style={facilityMetric}><span>Footprint</span><b>{selected.w}×{selected.h}</b></div>
-        <div style={facilityMetric}><span>Level</span><b>{selected.upgradeLevel ?? 1}/3</b></div>
+        <div style={facilityMetric}><span>{selected.kind === "office" ? "Office scale" : "Level"}</span><b>{selected.kind === "office" ? officeStageForLevel(selected.upgradeLevel ?? 1).label : `${selected.upgradeLevel ?? 1}/3`}</b></div>
       </div>
-      <div style={{ marginTop: 6, padding: "8px 9px", borderRadius: 8, background: C.panel2, fontSize: 10.5, display: "flex", justifyContent: "space-between", gap: 10 }}><span style={{ color: C.dim }}>{selected.kind === "office" ? "Staff seats" : selected.kind === "warehouse" ? "Storage capacity" : selected.kind === "factory" ? "Production / month" : "Supplier capacity / month"}</span><b>{selected.kind === "office" ? `${selected.assignedPersonnelIds.length} / ${selected.capacity}` : fmtNum(selected.capacity)}</b></div>
-      <button style={{ ...bigBtn, width: "100%", marginTop: 10 }} onClick={() => openSelected(selected)}>{selectedNav?.label} →</button>
+      <div style={{ marginTop: 6, padding: "8px 9px", borderRadius: 8, background: C.panel2, fontSize: 10.5, display: "flex", justifyContent: "space-between", gap: 10 }}><span style={{ color: C.dim }}>{selected.kind === "office" ? "Staff seats" : selected.kind === "warehouse" ? "Storage capacity" : selected.kind === "factory" ? "Production / month" : "Supplier capacity / month"}</span><b>{selected.kind === "office" ? `${selected.assignedPersonnelIds.length + (selected.id === "founder-office" ? 1 : 0)} / ${selected.capacity}` : fmtNum(selected.capacity)}</b></div>
+      {selected.id === "founder-office" && world.brands.length === 0
+        ? <button style={{ ...bigBtn, width: "100%", marginTop: 10 }} onClick={() => onNavigate("mgmt", "vision")}>Create your founding brand →</button>
+        : <button style={{ ...bigBtn, width: "100%", marginTop: 10 }} onClick={() => openSelected(selected)}>{selectedNav?.label} →</button>}
       <label style={labelStyle}>Facility name<input value={selected.name} onChange={(e) => updateSelected({ name: e.target.value })} style={inputStyle} /></label>
 
       {selected.kind === "office" && <>
         {selected.id === "founder-office" ? <div style={{ marginTop: 10, display: "grid", gap: 7 }}>
           <div style={{ ...slotStyle, borderColor: "#9fc8e5" }}><div><b>Founder / CEO</b><div style={{ color: C.faint, fontSize: 9.5 }}>Permanent leadership slot</div></div><span style={{ color: C.green, fontWeight: 900 }}>FIXED</span></div>
-          <div style={slotStyle}><div><b>Product team seat</b><div style={{ color: C.faint, fontSize: 9.5 }}>Your first operating seat</div></div><span style={{ color: C.violet, fontWeight: 900 }}>{selected.assignedPersonnelIds.length}/{selected.capacity}</span></div>
+          {Array.from({ length: Math.max(0, selected.capacity - 1) }).map((_, i) => { const person = world.player.personnel.find((p) => p.id === selected.assignedPersonnelIds[i]); return <div key={i} style={slotStyle}><div><b>{person ? person.name : `Open desk ${i + 2}`}</b><div style={{ color: C.faint, fontSize: 9.5 }}>{person ? person.title : "Flexible startup seat"}</div></div><span style={{ color: person ? C.green : C.violet, fontWeight: 900 }}>{person ? "OCCUPIED" : "OPEN"}</span></div>; })}
         </div> : <label style={labelStyle}>Assign team<select value={selected.team} onChange={(e) => updateSelected({ team: e.target.value as TeamKind, productKey: e.target.value === "product" ? selected.productKey : null })} style={inputStyle}>{Object.entries(TEAM_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>}
         <div style={labelStyle}>Assigned employees
-          <div style={{ display: "grid", gap: 6, marginTop: 3 }}>{world.player.personnel.filter((p: Personnel) => roleFitsTeam(p.role, selected.id === "founder-office" ? "product" : selected.team)).length ? world.player.personnel.filter((p: Personnel) => roleFitsTeam(p.role, selected.id === "founder-office" ? "product" : selected.team)).map((p: Personnel) => { const checked = selected.assignedPersonnelIds.includes(p.id); const otherRoom = rooms.find((r) => r.id !== selected.id && r.assignedPersonnelIds.includes(p.id)); const full = !checked && selected.assignedPersonnelIds.length >= selected.capacity; return <label key={p.id} style={{ display: "flex", gap: 7, alignItems: "center", fontWeight: 400, opacity: full ? .5 : 1 }}><input disabled={full} type="checkbox" checked={checked} onChange={() => updateSelected({ assignedPersonnelIds: checked ? selected.assignedPersonnelIds.filter((id) => id !== p.id) : [...selected.assignedPersonnelIds, p.id] })} /><span>{p.name} · {p.title}{otherRoom ? <span style={{ color: C.amber }}> · currently {otherRoom.name}</span> : null}</span></label>; }) : <div style={{ color: C.faint, fontWeight: 400 }}>No compatible employees. <button style={{ ...ctrlBtn, marginTop: 6 }} onClick={() => onNavigate("mgmt","personnel")}>Search for people</button></div>}</div>
+          <div style={{ display: "grid", gap: 6, marginTop: 3 }}>{world.player.personnel.filter((p: Personnel) => roleFitsRoom(p.role, selected)).length ? world.player.personnel.filter((p: Personnel) => roleFitsRoom(p.role, selected)).map((p: Personnel) => { const checked = selected.assignedPersonnelIds.includes(p.id); const otherRoom = rooms.find((r) => r.id !== selected.id && r.assignedPersonnelIds.includes(p.id)); const staffLimit = selected.id === "founder-office" ? Math.max(0, selected.capacity - 1) : selected.capacity; const full = !checked && selected.assignedPersonnelIds.length >= staffLimit; return <label key={p.id} title={full ? "This office has no free staff seats." : undefined} style={{ display: "flex", gap: 7, alignItems: "center", fontWeight: 400, opacity: full ? .5 : 1 }}><input disabled={full} type="checkbox" checked={checked} onChange={() => updateSelected({ assignedPersonnelIds: checked ? selected.assignedPersonnelIds.filter((id) => id !== p.id) : [...selected.assignedPersonnelIds, p.id] })} /><span>{p.name} · {p.title}{otherRoom ? <span style={{ color: C.amber }}> · currently {otherRoom.name}</span> : null}</span></label>; }) : <div style={{ color: C.faint, fontWeight: 400 }}>No compatible employees. <button style={{ ...ctrlBtn, marginTop: 6 }} onClick={() => onNavigate("mgmt","personnel")}>Search for people</button></div>}</div>
+          {selected.assignedPersonnelIds.length >= (selected.id === "founder-office" ? selected.capacity - 1 : selected.capacity) && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ No free staff desks. Expand this office or build another compatible office.</div>}
         </div>
         {(selected.id === "founder-office" || selected.team === "product") && <>
-          <label style={labelStyle}>Category mandate<select value={selected.productKey ?? ""} onChange={(e) => updateSelected({ productKey: e.target.value || null, skuId: null, team: "product" })} style={inputStyle}><option value="">Choose product type…</option>{activeProductTypes.map((p) => <option key={p.key} value={p.key}>{p.label} · {INDUSTRIES[p.industryId]?.label ?? p.industryId}</option>)}</select></label>
-          <button style={{ ...ctrlBtn, width: "100%", marginTop: 8, color: C.violet }} onClick={openCreator}>＋ Design a product</button>
+          <label style={labelStyle}>Category mandate<select value={selected.productKey ?? ""} onChange={(e) => updateSelected({ productKey: e.target.value || null, skuId: null, team: selected.id === "founder-office" ? "unassigned" : "product" })} style={inputStyle}><option value="">Choose product type…</option>{activeProductTypes.map((p) => <option key={p.key} value={p.key}>{p.label} · {INDUSTRIES[p.industryId]?.label ?? p.industryId}</option>)}</select></label>
+          {(() => { const check = canCreateProduct(world); return <><button disabled={!check.ok} title={!check.ok ? check.reason : undefined} style={{ ...ctrlBtn, width: "100%", marginTop: 8, color: check.ok ? C.violet : C.faint, opacity: check.ok ? 1 : .5 }} onClick={openCreator}>＋ Design a product</button>{!check.ok && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 4 }}>↳ {check.reason}</div>}</>; })()}
         </>}
       </>}
-      {selected.kind === "warehouse" && <><div style={{ color: C.faint, fontSize: 10.5, marginTop: 9 }}>Storage: {(selected.storageProfiles ?? ["standard"]).map((id) => STORAGE_PROFILES[id as keyof typeof STORAGE_PROFILES]?.label ?? id).join(" + ")} · this building contributes <b style={{ color: C.ink }}>{fmtNum(selected.capacity)}</b> standard-space units to the pooled warehouse network.</div><WarehouseMini world={world} products={warehouseProducts} utilization={warehouseUtil} totalCapacity={warehouseUnits} totalUsed={warehouseUsed} /></>}
-      {selected.kind === "factory" && <><div style={{ color: C.faint, fontSize: 10.5, marginTop: 9 }}>Lines: {(selected.manufacturingFamilies ?? []).map((id) => MANUFACTURING_FAMILIES[id]?.label ?? id).join(" + ") || "No production family configured"}</div><label style={labelStyle}>Production profile<select value="" onChange={(e) => { if (!e.target.value) return; const profile = archetypeByKey(e.target.value); const ok = retoolFactory(selected.id, e.target.value); setMessage(ok ? `${selected.name} retooled for ${profile?.label ?? e.target.value}.` : "Retooling requires an unlocked category and sufficient cash."); }} style={inputStyle}><option value="">Retool factory for product…</option>{activeProductTypes.map((p) => <option key={p.key} value={p.key}>{p.label} · {p.manufacturingFamilies.map((id) => MANUFACTURING_FAMILIES[id]?.label ?? id).join(" + ")}</option>)}</select></label><ActivityMini title="Owned production" skus={ownBatches} empty="No owned batches currently running." /></>}
+      {selected.kind === "warehouse" && <><div style={{ color: C.faint, fontSize: 10.5, marginTop: 9 }}>Storage: {(selected.storageProfiles ?? ["standard"]).map((id) => STORAGE_PROFILES[id as keyof typeof STORAGE_PROFILES]?.label ?? id).join(" + ")} · this building contributes <b style={{ color: C.ink }}>{fmtNum(selected.capacity)}</b> standard-space units to the pooled warehouse network.</div>
+        <div style={{ marginTop: 10, padding: 9, border: `1px solid ${C.line}`, borderRadius: 9, background: C.panel2 }}>
+          <b style={{ fontSize: 11 }}>Storage modules</b>
+          <div style={{ color: C.faint, fontSize: 9.5, marginTop: 3 }}>Products with climate, chilled, frozen or secure storage requirements cannot be manufactured until a compatible module exists.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6, marginTop: 8 }}>{(["climate","refrigerated","frozen","secure"] as StorageProfileId[]).map((profile) => {
+            const installed = (selected.storageProfiles ?? ["standard"]).includes(profile);
+            const techGate = storageModuleRequirement(world, profile);
+            const peopleGate = teamEffectiveness(world, "operations") <= 0 ? "Seat a Sourcing / Operations specialist before installing specialized equipment." : null;
+            const gate = techGate ?? peopleGate;
+            const cost = WAREHOUSE_MODULE_COST[profile as Exclude<StorageProfileId,"standard">];
+            const affordable = world.player.cash >= cost;
+            return <button key={profile} disabled={installed || Boolean(gate) || !affordable} title={installed ? "Installed" : gate ?? (!affordable ? `Need ${fmtMoney(cost-world.player.cash)} more cash.` : undefined)} onClick={() => { const r=installWarehouseModule(selected.id, profile); setMessage(r.ok ? `${STORAGE_PROFILES[profile].infrastructureLabel} installed.` : r.reason ?? "Module installation failed."); }} style={{ ...ctrlBtn, textAlign: "left", opacity: installed || gate || !affordable ? .5 : 1 }}>
+              <b>{installed ? "✓ " : ""}{STORAGE_PROFILES[profile].infrastructureLabel}</b><div style={{ color: gate ? C.amber : C.faint, fontSize: 9, marginTop: 2 }}>{installed ? "Installed" : gate ?? fmtMoney(cost)}</div>
+            </button>;
+          })}</div>
+        </div>
+        <WarehouseMini world={world} products={warehouseProducts} utilization={warehouseUtil} totalCapacity={warehouseUnits} totalUsed={warehouseUsed} /></>}
+      {selected.kind === "factory" && <><div style={{ color: C.faint, fontSize: 10.5, marginTop: 9 }}>Lines: {(selected.manufacturingFamilies ?? []).map((id) => MANUFACTURING_FAMILIES[id]?.label ?? id).join(" + ") || "No production family configured"}</div>{teamEffectiveness(world,"operations") <= 0 && <div style={{ color:C.amber,fontSize:9.5,marginTop:6 }}>↳ Factory engineering is idle until a Sourcing / Operations specialist is seated.</div>}<label style={labelStyle}>Production profile<select disabled={teamEffectiveness(world,"operations") <= 0} title={teamEffectiveness(world,"operations") <= 0 ? "Seat a Sourcing / Operations specialist before retooling a factory." : undefined} value="" onChange={(e) => { if (!e.target.value) return; const profile = archetypeByKey(e.target.value); const ok = retoolFactory(selected.id, e.target.value); setMessage(ok ? `${selected.name} retooled for ${profile?.label ?? e.target.value}.` : "Retooling requires an Operations specialist, an unlocked category and sufficient cash."); }} style={{...inputStyle,opacity:teamEffectiveness(world,"operations") > 0 ? 1 : .5}}><option value="">Retool factory for product…</option>{activeProductTypes.map((p) => <option key={p.key} value={p.key}>{p.label} · {p.manufacturingFamilies.map((id) => MANUFACTURING_FAMILIES[id]?.label ?? id).join(" + ")}</option>)}</select></label><ActivityMini title="Owned production" skus={ownBatches} empty="No owned batches currently running." /></>}
       {selected.kind === "outsourcing" && <ActivityMini title="Supplier pipeline" skus={outsourceBatches} empty="No outsourced batches currently inbound." />}
       <div style={{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}><div><b style={{ fontSize: 11.5 }}>Expand / upgrade facility</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>Capacity upgrades keep this footprint. Build another facility if you need a second physical location.</div></div>{selectedUpgrade ? <span style={{ color: C.violet, fontWeight: 900, fontSize: 10 }}>L{selectedUpgrade.currentLevel} → L{selectedUpgrade.nextLevel}</span> : <span style={{ color: C.green, fontWeight: 900, fontSize: 10 }}>MAX</span>}</div>
-        {selectedUpgrade ? <button disabled={world.player.cash < selectedUpgrade.cost} style={{ ...ctrlBtn, width: "100%", marginTop: 8, borderColor: C.violet, color: world.player.cash >= selectedUpgrade.cost ? C.violet : C.faint, opacity: world.player.cash >= selectedUpgrade.cost ? 1 : .5 }} onClick={() => { const r = upgradeRoom(selected.id); setMessage(r.ok ? `${selected.name} expanded to level ${selectedUpgrade.nextLevel}.` : r.reason ?? "Upgrade failed."); }}>Upgrade · +{fmtNum(selectedUpgrade.capacityGain)} capacity · {fmtMoney(selectedUpgrade.cost)}</button> : <div style={{ color: C.faint, fontSize: 10, marginTop: 6 }}>This facility is fully upgraded.</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}><div><b style={{ fontSize: 11.5 }}>Expand / upgrade facility</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{selected.kind === "office" ? "Office progression: 4 → 8 → 16 → 32 seats. Once the Corporate HQ is reached, every additional floor adds 8 more positions." : "Capacity upgrades improve this facility without changing its current footprint."}</div></div>{selectedUpgrade ? <span style={{ color: C.violet, fontWeight: 900, fontSize: 10 }}>{selected.kind === "office" ? `${selectedUpgrade.currentLabel} → ${selectedUpgrade.nextLabel}` : `L${selectedUpgrade.currentLevel} → L${selectedUpgrade.nextLevel}`}</span> : <span style={{ color: C.green, fontWeight: 900, fontSize: 10 }}>MAX</span>}</div>
+        {selectedUpgrade ? <><button disabled={Boolean(selectedUpgradeGate) || world.player.cash < selectedUpgrade.cost} title={selectedUpgradeGate ?? (world.player.cash < selectedUpgrade.cost ? `Need ${fmtMoney(selectedUpgrade.cost - world.player.cash)} more cash.` : undefined)} style={{ ...ctrlBtn, width: "100%", marginTop: 8, borderColor: C.violet, color: !selectedUpgradeGate && world.player.cash >= selectedUpgrade.cost ? C.violet : C.faint, opacity: !selectedUpgradeGate && world.player.cash >= selectedUpgrade.cost ? 1 : .5 }} onClick={() => { const r = upgradeRoom(selected.id); setMessage(r.ok ? `${selected.name} expanded to level ${selectedUpgrade.nextLevel}.` : r.reason ?? "Upgrade failed."); }}>{selected.kind === "office" ? `Expand · +${fmtNum(selectedUpgrade.capacityGain)} seats · ${fmtMoney(selectedUpgrade.cost)}` : `Upgrade · +${fmtNum(selectedUpgrade.capacityGain)} capacity · ${fmtMoney(selectedUpgrade.cost)}`}</button>{selectedUpgradeGate ? <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ {selectedUpgradeGate}</div> : world.player.cash < selectedUpgrade.cost && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ Need {fmtMoney(selectedUpgrade.cost - world.player.cash)} more cash for this upgrade.</div>}</> : <div style={{ color: C.faint, fontSize: 10, marginTop: 6 }}>This facility is fully upgraded.</div>}
       </div>
       {selected.id !== "founder-office" && <button style={{ ...ctrlBtn, width: "100%", marginTop: 12, color: C.red }} onClick={() => { demolishRoom(selected.id); setSelectedId(null); }}>Demolish facility</button>}
     </div>}
   </div>;
 }
 
-function BuildMenu({ current, cash, choose }: { current: RoomKind | "select" | "navigate"; cash: number; choose: (kind: RoomKind) => void }) {
+function BuildMenu({ current, cash, choose, compact = false, hasOffice, world }: { current: BuildTool | "select" | "navigate"; cash: number; choose: (kind: BuildTool) => void; compact?: boolean; hasOffice: boolean; world: World }) {
   const [open, setOpen] = useState(false);
-  return <div style={{ position: "relative" }}><button style={{ ...ctrlBtn, background: open || (current !== "select" && current !== "navigate") ? C.violet : "rgba(255,255,255,.94)", color: open || (current !== "select" && current !== "navigate") ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => setOpen((v) => !v)}>＋ Build</button>{open && <div style={{ position: "absolute", left: 0, top: 38, width: 300, background: "white", border: `1px solid ${C.line}`, borderRadius: 11, padding: 7, boxShadow: "0 12px 32px rgba(17,42,67,.22)", zIndex: 12 }}>{(Object.keys(ROOM_META) as RoomKind[]).map((kind) => { const d = ROOM_META[kind]; const affordable = cash >= d.cost; return <button disabled={!affordable} key={kind} onClick={() => { choose(kind); setOpen(false); }} style={{ width: "100%", border: 0, background: current === kind ? C.panel2 : "transparent", padding: "9px", textAlign: "left", borderRadius: 7, cursor: affordable ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: affordable ? 1 : .45 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{d.icon} {d.label}</b><span style={{ color: C.faint }}>{fmtMoney(d.cost)}</span></div><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{d.size[0]}×{d.size[1]} footprint · {kind === "office" ? `${d.capacity} seats` : `${fmtNum(d.capacity)} capacity`} · {fmtMoney(d.monthlyCost)}/mo</div></button>; })}</div>}</div>;
+  const activeBuild = current !== "select" && current !== "navigate";
+  return <div style={{ position: "relative" }}>
+    <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: open || activeBuild ? C.violet : "rgba(255,255,255,.94)", color: open || activeBuild ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => setOpen((v) => !v)}>＋ Build</button>
+    {open && <div style={{ position: "absolute", left: 0, top: compact ? 44 : 38, width: compact ? "min(310px,calc(100vw - 20px))" : 310, maxHeight: compact ? "52vh" : undefined, overflowY: compact ? "auto" : undefined, background: "white", border: `1px solid ${C.line}`, borderRadius: 11, padding: 7, boxShadow: "0 12px 32px rgba(17,42,67,.22)", zIndex: 12 }}>
+      <button disabled={cash < CAMPUS_PATH_COST} onClick={() => { choose("path"); setOpen(false); }} style={{ width: "100%", border: 0, background: current === "path" ? C.panel2 : "transparent", padding: 9, textAlign: "left", borderRadius: 7, cursor: cash >= CAMPUS_PATH_COST ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: cash >= CAMPUS_PATH_COST ? 1 : .45 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>▰ Path</b><span style={{ color: C.faint }}>{fmtMoney(CAMPUS_PATH_COST)}/tile</span></div><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>1×1 · extend from the entrance · buildings must touch connected paths</div></button>
+      {(Object.keys(ROOM_META) as RoomKind[]).map((kind) => {
+        const d = ROOM_META[kind]; const affordable = cash >= d.cost; const founder = kind === "office" && !hasOffice; const gate = founder ? null : facilityResearchRequirement(world, kind); const available = affordable && !gate;
+        return <button disabled={!available} title={gate ?? (!affordable ? `Need ${fmtMoney(d.cost - cash)} more cash.` : undefined)} key={kind} onClick={() => { choose(kind); setOpen(false); }} style={{ width: "100%", border: 0, background: current === kind ? C.panel2 : "transparent", padding: 9, textAlign: "left", borderRadius: 7, cursor: available ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: available ? 1 : .45 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{d.icon} {founder ? "Founder Office" : d.label}</b><span style={{ color: C.faint }}>{fmtMoney(d.cost)}</span></div><div style={{ color: available ? C.faint : C.amber, fontSize: 9.5, marginTop: 2 }}>{d.size[0]}×{d.size[1]} footprint · {kind === "office" ? `${founder ? 4 : d.capacity} positions` : `${fmtNum(d.capacity)} capacity`} · {fmtMoney(d.monthlyCost)}/mo{founder ? " · Founder + 3 staff desks" : ""}{gate ? ` · ${gate}` : !affordable ? ` · need ${fmtMoney(d.cost - cash)} more cash` : ""}</div></button>;
+      })}
+    </div>}
+  </div>;
 }
 
 

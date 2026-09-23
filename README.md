@@ -47,7 +47,7 @@ src/
 
 The engine is deliberately free of React so it can be unit-tested and reused.
 
-## Current state (v0.99.6 · Batch 11F — Gameplay Usability / Player Jobs)
+## Current state (v1.0.4 · Research & Capability Tree)
 
 **Customer base + loyalty.** Revenue is no longer an instantaneous share — it's
 driven by a persistent customer *stock* per segment. Each period you acquire new
@@ -75,6 +75,97 @@ with Product Diagnosis, brand equity, full competitor AI, and strategy reports.
 The current architecture is multi-business and data-driven. Skincare and Toys can coexist inside one company with separate customers, competitors, awareness and category economics while sharing cash, people, facilities and corporate capabilities. Future industries are intended to be added primarily through product archetype data and reusable modules rather than bespoke simulation engines.
 
 
+
+
+
+
+
+## v1.0.4 — Research & Capability Tree
+
+v1.0.4 turns company growth into explicit capability progression. Cash and headcount are no longer enough on their own: the company must learn how to coordinate larger products, stronger recruiting, dedicated sourcing, owned manufacturing and larger corporate structures.
+
+- Added **Company → Research**, the canonical home for capability development and product-category expansion. Brand screens now show category access but no longer duplicate the category-development action.
+- New companies begin with only baseline startup capabilities. The Founder contributes a small development rate; seated Product, Strategy and Operations talent accelerates research. Only one company capability project can run at a time.
+- **Product progression is now researched:** A is available from the start, AA requires Advanced Product Development, and AAA requires Flagship Product Development in addition to its physical 16-seat office and full Product Lead + three Designer team.
+- **Organization progression is now researched:** 4→8 seats remains the natural startup expansion; 16-seat Large Offices require Organizational Scaling, 32-seat Corporate HQ requires Corporate Headquarters, and further +8-seat floors require Vertical Expansion.
+- **Recruiting progression is now researched:** Quick Available Search is the startup option; People & HR Foundations unlocks normal online searches; Executive Search unlocks deep searches for stronger senior talent.
+- **Operations progression is now researched:** founder-led outsourcing remains available through a seated Sourcing specialist, Supplier Management unlocks a dedicated Sourcing Office, and Owned Manufacturing unlocks factories.
+- **Market Intelligence** is now a capability unlock. After researching it, the company still needs seated Strategy / Intelligence staff to operate the function; technology and people are complementary rather than substitutes.
+- Product-category entry projects are surfaced under Research alongside corporate capabilities, giving the player one canonical place to answer “what can my company learn/unlock next?”
+- Active capability research appears in the global work queue with a live estimated completion time.
+- Existing v1.0.3 saves migrate to **schema v16** and are grandfathered only into capabilities their current products, offices, factories, sourcing facilities or intelligence teams already prove they possess.
+
+## v1.0.3 — Product Teams & Office Growth
+
+v1.0.3 connects product ambition directly to people, development time and physical office scale.
+
+- Added **A / AA / AAA product projects**.
+  - **A**: one Product Designer, ~35 base development days, limited 1–2★ design ceiling and 13 priority points.
+  - **AA**: one Product Lead + one Product Designer, ~80 base days, strong 3–4★ potential and 18 priority points.
+  - **AAA**: one Product Lead + three Product Designers, ~150 base days, 5★ / market-leading design potential and 23 priority points.
+- Product staff assigned to an active design are locked to that project until development completes. Large projects therefore consume real organizational capacity rather than acting as a cash-only upgrade.
+- The **Product Lead matters disproportionately**. AA weighs the Lead at 60% of team effectiveness; AAA weighs the Lead at 45%, with the three designers splitting the remaining 55%.
+- Product Designers can progress through **Senior Product Designer → Product Lead → VP Product**. Strong external searches can also surface senior Product Leads.
+- Project class determines the design-quality ceiling and available priority budget; a badly staffed AAA project can still underperform a well-executed smaller project.
+- Office growth now follows a clear physical progression:
+  - Small Suburban Office — **4 seats**
+  - Normal Office — **8 seats**
+  - Large Office — **16 seats**
+  - Massive Corporate HQ — **32 seats**
+  - Additional Corporate HQ floors — **+8 seats each**, with escalating cost.
+- AA requires access to an 8-seat office or larger; AAA requires a 16-seat office or larger. In v1.0.4 these physical requirements are complemented by explicit capability-research prerequisites.
+- The Founder Office remains the startup bridge: Founder + three staff initially, then it can grow with the same office progression rather than becoming a dead tutorial building.
+- Corporate HQ art is automatically used once an office reaches the 32-seat HQ stage.
+- Existing saves migrate to **schema v15**. Existing products infer an A/AA/AAA class from their former development depth, and legacy offices never lose capacity during migration.
+
+## v1.0.2 — Empty Lot & Founder Company
+
+v1.0.2 rewrites the opening of a new company so the player actually **builds a business from nothing** instead of inheriting a prebuilt starter campus.
+
+- New games enter the campus with only a fixed **campus entrance** and two connected path tiles. No office, warehouse or founding brand exists yet.
+- Campus construction now starts with a RollerCoaster-Tycoon-style loop: extend **1×1 path tiles** from the entrance, select a facility, preview its footprint on the isometric grid and place it beside the connected path. Facilities cannot overlap another facility or a path.
+- The first office becomes the **Founder Office**: a 4-position startup workspace with one permanent Founder / CEO position and three hired staff desks. It can be expanded once to 8 positions in this release; the broader 4→8→16→32 office progression is reserved for the product-team scale batch.
+- The founding brand is no longer created in pre-game setup. After the Founder Office exists, the player creates the brand in-game using the full logo/identity builder.
+- Recruiting ends in an **employment contract**. Before signing, the player chooses the exact compatible office/workspace; the contract shows role, title, salary, specialty and assigned desk. Hiring is blocked with a clear explanation when no compatible desk is open.
+- The Founder Office is intentionally flexible in the startup phase. Its three staff desks can house the first Product Designer, Sourcing / Operations specialist and Marketing specialist, allowing one tiny four-person company (including the Founder) to complete the first commercial loop.
+- A seated Sourcing / Operations specialist provides starter outsourced-manufacturing and retailer-negotiation capability; a seated Marketing specialist is required before the first product release.
+- The Founder Goals were rebuilt around the new opening: connect the lot → build Founder Office → create brand → hire Product Designer → design → hire Sourcing → build warehouse → manufacture → hire Marketing → launch → win customers.
+- Product development now scales from solo **A** projects to multi-person **AA / AAA** teams, with Product Leads carrying disproportionate influence on larger projects.
+- Save schema is **v14**. Existing companies are grandfathered with a connected access-road network and keep their current facilities/products.
+
+v1.0.4 now layers explicit capability research on top of these team, time and office-size mechanics.
+
+## v1.0.1 — Clarity & Detail Pass
+
+v1.0.1 is a post-release usability pass focused on small moments where the game was technically working but did not explain itself well enough. No simulation architecture or save-schema changes were introduced.
+
+- **Disabled actions explain why.** Core greyed-out actions now carry a visible reason (and tooltip where useful) instead of forcing the player to guess. This pass covers product design/manufacturing/reorders, product launch prerequisites, segment saving, distribution contracts, IP creation/licensing, facility staff capacity, building affordability and facility upgrades.
+- Fixed a real manufacturing-screen bug where the displayed `Maximum available now` could still be calculated from the SKU's previous/default production route instead of the partner/factory currently selected in the UI. Manufacturing availability now previews the selected route correctly.
+- The Manufacture stage now includes a **Manufacturing Order / quote** with manufacturer, batch, unit cost, total price, estimated lead time, available capacity, delivered quality and cash after order. The order button also includes the total price.
+- Product reorders now show their estimated production cost and any blocker before the player clicks.
+- **People now has local subtabs:** `Hiring` and `Employees`. Recruiting search/results stay together; the permanent employee roster is separate. Office assignment remains on the campus building, keeping one canonical place for seat assignment.
+- Product Creator and Distribution partner selection received the same blocker-copy treatment so unavailable actions are explicit rather than merely dimmed.
+
+Save schema remains **v13** and v1.0.0 saves remain compatible.
+
+## v1.0.0 — First Complete Release / Mobile Certification
+
+Business Empire v1.0 is the first iteration treated as a complete game rather than an expanding prototype. This release intentionally adds **no new simulation systems**. It certifies the existing tycoon loop across desktop, tablet and phone.
+
+- The **Campus remains the permanent game world** on every device. Phone layouts no longer shrink the desktop dashboard; the map keeps the available viewport and operational screens open as closable layers.
+- The desktop left rail becomes a **thumb-friendly bottom navigation bar** on phones, including badges for goals, product attention and recruiting progress.
+- The economic HUD has a dedicated mobile composition: Cash / Profit / Revenue remain permanently visible, simulation controls stay tappable, and active work becomes a compact floating status chip.
+- Facility context becomes a **mobile bottom sheet**. Tapping the isometric foundation opens assignments, capacity, upgrades and actions without permanently covering the map.
+- Build, zoom and recenter controls have mobile-sized touch targets; map panning remains direct touch interaction.
+- Product / Company / Market / Finance / People overlays become near-full-screen mobile workspaces with sticky headers, horizontally scrollable local tabs and safe-area padding.
+- Product Creator and other modals become **bottom-sheet style flows** on phones. Form controls use mobile-safe sizing to avoid browser zoom and cramped inputs.
+- Setup screens, recruiting modes, brand visual tools, History summaries and IP metrics now reflow to one/two-column phone layouts instead of fixed desktop grids.
+- Wide finance / analysis tables remain available through contained horizontal scrolling instead of forcing the entire game viewport wider than the phone.
+- Inventory product rows collapse into a readable mobile card-like layout.
+- iPhone-style `safe-area-inset-*` padding is respected for the HUD, navigation and modal sheets.
+- Uses dynamic viewport units (`100dvh`) where the browser chrome would otherwise cause vertical clipping.
+
+The simulation/save schema remains **v13** from Batch 11F; v1.0 is a UX/release certification pass, not a save-breaking feature release.
 
 ## Batch 11F — Gameplay Usability / Player Jobs
 
@@ -433,3 +524,6 @@ Batch 10 adds no new simulation systems. It reorganizes the existing game so the
 - Responsive rules keep the bottom dock and major information blocks usable on tablet/mobile.
 - Save schema remains v10; this pass changes presentation and navigation, not simulation state.
 
+
+## v1.0.5 — Capability Gatekeeping, Flow & Balance Audit
+Advanced growth now needs believable prerequisites instead of cash alone. Corporate research requires a seated CIO; recruiting requires a compatible open desk; custom segmentation and marketing require commercial staff; production, factory retooling and specialized storage installation require Operations ownership; and advanced market studies require both Market Intelligence technology and Strategy staff. Warehouses can install researched climate/refrigerated/frozen/secure modules, so future cold-chain products are physically gated by infrastructure. IP creation/licensing and second-industry expansion also have explicit organizational owners. The Founder Journey now deliberately creates room for the CIO before research begins, avoiding a circular gate, and the Research screen includes a compact Capability Gate Map. Navigation order remains unchanged. See `docs/V1_0_5_GATEKEEPING_FLOW.md`.

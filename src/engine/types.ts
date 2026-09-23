@@ -172,6 +172,23 @@ export const DESIGN_DEPTHS: Record<DesignDepth, { label: string; days: number; q
   breakthrough: { label: "Breakthrough", days: 150, qualityMult: 1.42, desc: "Long, expensive-to-wait development aimed at standout products." },
 };
 
+
+export type ProductProjectTier = "A" | "AA" | "AAA";
+
+export const PRODUCT_PROJECT_TIERS: Record<ProductProjectTier, {
+  label: string;
+  baseDays: number;
+  designerSlots: number;
+  leadRequired: boolean;
+  designQualityCap: number;
+  priorityPoints: number;
+  description: string;
+}> = {
+  A: { label: "A", baseDays: 35, designerSlots: 1, leadRequired: false, designQualityCap: .46, priorityPoints: 13, description: "Focused startup project. One Product Designer; limited scope and roughly 1–2★ design ceiling." },
+  AA: { label: "AA", baseDays: 80, designerSlots: 1, leadRequired: true, designQualityCap: .79, priorityPoints: 18, description: "Advanced project. One Product Lead plus one Product Designer; capable of a strong 3–4★ design." },
+  AAA: { label: "AAA", baseDays: 150, designerSlots: 3, leadRequired: true, designQualityCap: 1, priorityPoints: 23, description: "Flagship program. One Product Lead plus three Product Designers; expensive in time and people, but capable of market-leading design." },
+};
+
 export type ProductTestingLevel = "standard" | "enhanced" | "rigorous";
 
 export interface InventoryLot {
@@ -204,6 +221,8 @@ export interface SKU {
   assignedPmName?: string; // current/last lead name survives employee departures
   leadHistory?: { personId: string; personName: string; fromTick: number; toTick?: number }[];
   designDepth: DesignDepth;
+  projectTier?: ProductProjectTier;
+  assignedDesignerIds?: string[]; // non-lead product team members; A stores its sole designer here too for explicit team accounting
   positioning?: string;       // player-facing product strategy intent
   targetLabel?: string;       // human-readable target used at design time
   manufacturingStars?: number; // 1..5 player-facing manufacturing standard
@@ -424,7 +443,7 @@ export const VISION_GOALS: Record<VisionGoal, { label: string; adjective: string
 export type DeptTier = 0 | 1 | 2 | 3; // 0=none, 1=small, 2=medium, 3=large
 
 // ---- Personnel ----
-export type PersonnelRole = "product_manager" | "finance" | "marketing" | "strategy" | "operations";
+export type PersonnelRole = "product_manager" | "finance" | "marketing" | "strategy" | "operations" | "innovation";
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
 export interface PersonnelAttributes {
@@ -492,7 +511,7 @@ export const RARITY_DEFS: Record<Rarity, { label: string; color: string; salaryM
 };
 
 export const BASE_SALARIES: Record<PersonnelRole, number> = {
-  product_manager: 6_000, finance: 4_500, marketing: 5_000, strategy: 5_500, operations: 4_000,
+  product_manager: 6_000, finance: 4_500, marketing: 5_000, strategy: 5_500, operations: 4_000, innovation: 8_500,
 };
 
 // ---- Expertise ----
@@ -503,8 +522,10 @@ export interface Expertise {
 }
 
 
+export interface CampusPathTile { x: number; y: number; }
+
 export type OperatingRoomKind = "office" | "factory" | "warehouse" | "outsourcing";
-export type OperatingTeamKind = "unassigned" | "product" | "marketing" | "finance" | "sales" | "operations" | "strategy";
+export type OperatingTeamKind = "unassigned" | "product" | "marketing" | "finance" | "sales" | "operations" | "strategy" | "innovation";
 export interface OperatingRoom {
   id: string;
   kind: OperatingRoomKind;
@@ -517,7 +538,7 @@ export interface OperatingRoom {
   buildCost: number;
   monthlyCost: number;
   capacity: number; // factory units/month; warehouse standard-space units; office seats; outsourcing supplier capacity
-  upgradeLevel?: number; // 1..3. Capacity upgrades keep the same footprint; build another facility for more physical footprint.
+  upgradeLevel?: number; // office: 1=4, 2=8, 3=16, 4=32; levels 5+ add +8 seats/floor. Other facilities remain capped upgrades.
   manufacturingFamilies?: string[]; // factories only; Product Engine line compatibility
   storageProfiles?: string[]; // warehouses only; foundation for cold/secure storage modules
 }
@@ -552,6 +573,33 @@ export interface CorporateCapabilities {
   people: number;
 }
 
+export type ResearchNodeId =
+  | "advanced_product_development"
+  | "flagship_product_development"
+  | "professional_recruiting"
+  | "executive_search"
+  | "supplier_management"
+  | "owned_manufacturing"
+  | "organizational_scaling"
+  | "corporate_hq"
+  | "vertical_expansion"
+  | "market_intelligence"
+  | "specialized_storage";
+
+export interface ResearchProject {
+  nodeId: ResearchNodeId;
+  startedTick: number;
+  progress: number;
+  requiredPoints: number;
+  cashCommitted: number;
+}
+
+export interface ResearchState {
+  completed: ResearchNodeId[];
+  active: ResearchProject | null;
+  lifetimePoints: number;
+}
+
 export interface PlayerState {
   skus: SKU[];
   contracts: Contract[];
@@ -577,11 +625,13 @@ export interface PlayerState {
   expertise: Expertise;
   vision: Vision | null;
   operatingRooms: OperatingRoom[];
+  campusPaths: CampusPathTile[]; // walkable campus paths. Buildings must connect to the entrance network.
   unlockedCategories: string[];
   categoryExpansionProjects: CategoryExpansionProject[];
   businesses: Record<string, IndustryBusiness | undefined>;
   industryEntryProjects: IndustryEntryProject[];
   corporateCapabilities: CorporateCapabilities;
+  research: ResearchState;
 }
 
 export const DEPT_TIERS: { tier: DeptTier; label: string; cost: number; detail: string }[] = [

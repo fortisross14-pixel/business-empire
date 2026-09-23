@@ -6,6 +6,7 @@
 // ============================================================================
 import type { World, Cell, AxisKey } from "./types";
 import { AXES, AXIS_KEYS, axisPos, clamp, sum, type MarketingAgency } from "./industries";
+import { teamEffectiveness } from "./people";
 
 export interface SegmentFilter {
   // for each axis, the set of allowed values; empty/absent = all values allowed
@@ -15,6 +16,12 @@ export interface SavedSegment {
   id: string;
   name: string;
   filter: SegmentFilter;
+}
+
+
+export function canManageSegments(w: World): { ok: boolean; reason: string } {
+  if (teamEffectiveness(w, "marketing") > 0 || teamEffectiveness(w, "strategy") > 0) return { ok: true, reason: "" };
+  return { ok: false, reason: "Seat a Marketing or Strategy specialist before creating custom market segments." };
 }
 
 export function cellsInSegment(w: World, filter: SegmentFilter): Cell[] {

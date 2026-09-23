@@ -5,13 +5,15 @@ import { CompetitorChip } from "../visualIdentity";
 import { STUDY_DEFS } from "../../engine/world";
 import { TICKS_PER_QUARTER } from "../../engine/types";
 import type { World } from "../../engine/types";
+import { hasResearch } from "../../engine/research";
 
 export function IntelligenceView({ world, commission }: { world: World; commission: (t: string) => void }) {
-  const consultantOnly = world.player.intelDept < 1;
+  const hasTech = hasResearch(world, "market_intelligence");
+  const consultantOnly = world.player.intelDept < 1 || !hasTech;
   return (
     <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
       <Panel title={consultantOnly ? "External Market Research" : "Commission a Study"} style={{ flex: "1 1 320px" }}>
-        {consultantOnly && <div style={{ color: C.dim, fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>Without an Intelligence team you can still hire an external consultant for a post-launch product study. Build an Intelligence function later to unlock broader market research.</div>}
+        {consultantOnly && <div style={{ color: C.dim, fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>{!hasTech ? "Broader market research requires the Market Intelligence capability plus a seated Strategy team. You can still hire an external consultant for a post-launch product diagnosis." : "Market Intelligence is researched, but you still need a seated Strategy team to operate it. External product diagnosis remains available."}</div>}
         {Object.entries(STUDY_DEFS).filter(([type]) => !consultantOnly || type === "product_diagnosis").map(([type, def]) => {
           const inflight = world.studies.find((s) => s.type === type && !s.done);
           const done = world.revealed[type];

@@ -2,6 +2,7 @@ import type { AxisKey, Cell, Contract, SKU, World } from "./types";
 import { AXES, CHANNEL_TYPES, RETAIL_PARTNERS, clamp, sum } from "./industries";
 import { contractAwarenessBoost, contractReach } from "./economics";
 import { retailerAffinity } from "./productCatalog";
+import { teamEffectiveness } from "./people";
 
 export interface DistributionMetrics {
   contracts: Contract[];
@@ -64,11 +65,8 @@ export function deriveSkuChannels(w: World, sku: SKU) {
 }
 
 export function hasCommercialCapability(w: World): boolean {
-  const sourcing = w.player.operatingRooms.some((r) => r.kind === "outsourcing");
-  if (sourcing) return true;
-  const salesRooms = w.player.operatingRooms.filter((r) => r.kind === "office" && r.team === "sales");
-  const seated = new Set(salesRooms.flatMap((r) => r.assignedPersonnelIds));
-  return w.player.personnel.some((p) => (p.role === "operations" || p.role === "strategy") && seated.has(p.id));
+  // Buildings add capacity, but relationships are still run by people.
+  return teamEffectiveness(w, "operations") > 0 || teamEffectiveness(w, "strategy") > 0;
 }
 
 

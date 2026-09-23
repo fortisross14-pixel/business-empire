@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { C, bigBtn, ctrlBtn, fmtMoney, fmtNum, fmtPct } from "../theme";
-import { Panel, FieldLabel, TextInput, Slider } from "../components";
+import { Panel, FieldLabel, TextInput, Slider, DisabledReason } from "../components";
 import { AXES, AXIS_KEYS } from "../../engine/industries";
-import { segmentStats, type SegmentFilter } from "../../engine/segments";
+import { canManageSegments, segmentStats, type SegmentFilter } from "../../engine/segments";
 import type { World, AxisKey } from "../../engine/types";
 
 export function SegmentsView({ world, saveSegment, deleteSegment, updateSegment}: {
@@ -16,6 +16,7 @@ export function SegmentsView({ world, saveSegment, deleteSegment, updateSegment}
   const [editingId, setEditingId] = useState<string | null>(null);
   const draftStats = segmentStats(world, filter);
   const mapRevealed = world.revealed.market_map;
+  const manageGate = canManageSegments(world);
 
   const toggle = (axis: AxisKey, val: string) => {
     setFilter((f) => {
@@ -63,11 +64,14 @@ export function SegmentsView({ world, saveSegment, deleteSegment, updateSegment}
           <Stat2 k="Avg spend" v={mapRevealed ? "$" + draftStats.avgSpend.toFixed(0) : "—"} />
           <Stat2 k="Cells covered" v={`${draftStats.cellCount} of ${world.cube.length}`} />
         </div>
-        <button style={{ ...bigBtn, width: "100%", marginTop: 12, opacity: name.trim() && draftStats.cellCount > 0 ? 1 : .5 }}
-          disabled={!name.trim() || draftStats.cellCount === 0}
+        {!manageGate.ok && <div style={{ color: C.amber, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: 9, marginTop: 10, fontSize: 10.5 }}>↳ {manageGate.reason}</div>}
+        <button style={{ ...bigBtn, width: "100%", marginTop: 12, opacity: manageGate.ok && name.trim() && draftStats.cellCount > 0 ? 1 : .5 }}
+          disabled={!manageGate.ok || !name.trim() || draftStats.cellCount === 0}
+          title={!manageGate.ok ? manageGate.reason : !name.trim() ? "Give this audience a name first." : draftStats.cellCount === 0 ? "The current filters do not include any customer cells." : undefined}
           onClick={saveOrUpdate}>
           {editingId ? "Save changes" : "Save segment"}
         </button>
+        {manageGate.ok && (!name.trim() || draftStats.cellCount === 0) && <DisabledReason>{!name.trim() ? "Give this audience a name before saving it." : "The current filters contain no customers; broaden the segment."}</DisabledReason>}
         {editingId && <button style={{ ...ctrlBtn, width: "100%", marginTop: 6 }} onClick={() => { setEditingId(null); setName(""); setFilter({}); }}>Cancel edit</button>}
       </Panel>
 

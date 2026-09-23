@@ -3,6 +3,7 @@ import { TICKS_PER_QUARTER, TICKS_PER_YEAR } from "./types";
 import { AXES, clamp } from "./industries";
 import { archetypeByKey, PRODUCT_ARCHETYPES } from "./productCatalog";
 import { recordChronicle } from "./chronicle";
+import { teamEffectiveness } from "./people";
 
 export const ORIGINAL_IP_CREATION_COST = 100_000;
 
@@ -202,6 +203,7 @@ export function signIPLicense(w: World, ipId: string, years: number): { ok: bool
   const ip = ipById(w, ipId);
   if (!ip || ip.ownerType !== "external") return { ok: false, reason: "This IP is not available for external licensing." };
   if (activeIPContract(w, ipId)) return { ok: false, reason: "You already hold an active license." };
+  if (teamEffectiveness(w, "strategy") <= 0 && teamEffectiveness(w, "marketing") <= 0) return { ok: false, reason: "Seat a Strategy or Marketing specialist before negotiating external IP licenses." };
   const terms = contractTerms(ip, years);
   if (!terms) return { ok: false, reason: "No licensing terms are available." };
   if (w.player.cash < terms.minimumGuarantee) return { ok: false, reason: "Not enough cash for the minimum guarantee." };
@@ -239,6 +241,7 @@ export function createOriginalIP(
 ): { ok: boolean; reason?: string; ip?: IPAsset } {
   const clean = name.trim();
   if (!clean) return { ok: false, reason: "Name the IP first." };
+  if (teamEffectiveness(w, "marketing") <= 0) return { ok: false, reason: "Seat a Marketing specialist before developing an original consumer IP." };
   if ((w.ipAssets ?? []).some((ip) => ip.name.toLowerCase() === clean.toLowerCase())) return { ok: false, reason: "An IP with that name already exists." };
   const families = Array.from(new Set(compatibleProductFamilies.filter((key) => {
     const archetype = archetypeByKey(key);

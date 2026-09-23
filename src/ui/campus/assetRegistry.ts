@@ -95,7 +95,7 @@ export const CAMPUS_ASSET_GROUPS = {
 };
 
 export function roomCampusAssetId(world: World, room: OperatingRoom): CampusAssetId {
-  if (room.id === "founder-office") return room.w >= 6 && room.h >= 6 ? "corporate_hq" : "startup_hq";
+  if (room.id === "founder-office") return (room.upgradeLevel ?? 1) >= 4 || room.capacity >= 32 ? "corporate_hq" : "startup_hq";
   if (room.kind === "factory") return "factory";
   if (room.kind === "warehouse") return "warehouse";
   if (room.kind === "outsourcing") return "loading_dock";

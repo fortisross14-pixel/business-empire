@@ -61,8 +61,9 @@ export function canStartIndustryEntry(w: World, industryId: string): { ok: boole
   const scale = companyScale(w);
   if (scale.id === "startup") return { ok: false, reason: "Grow beyond Startup stage before entering a second industry.", def };
   if (w.player.cash < def.investment) return { ok: false, reason: `Need $${def.investment.toLocaleString()} to fund organic entry.`, def };
-  const productTeam = w.player.operatingRooms.some(r => r.kind === "office" && r.team === "product");
-  if (!productTeam) return { ok: false, reason: "A staffed product organization is required for industry entry.", def };
+  const productTeam = teamEffectiveness(w, "product_manager") > 0;
+  if (!productTeam) return { ok: false, reason: "A staffed Product organization is required for industry entry.", def };
+  if (teamEffectiveness(w, "strategy") <= 0) return { ok: false, reason: "A seated Strategy specialist is required before entering a second industry.", def };
   return { ok: true, reason: "", def };
 }
 
@@ -79,5 +80,8 @@ export function completeIndustryEntry(w: World, industryId: string) {
 }
 
 export function industryEntrySpeed(w: World): number {
-  return 0.65 + teamEffectiveness(w, "strategy") * 0.45 + teamEffectiveness(w, "product_manager") * 0.35;
+  const strategy = teamEffectiveness(w, "strategy");
+  const product = teamEffectiveness(w, "product_manager");
+  if (strategy <= 0 || product <= 0) return 0;
+  return 0.55 + strategy * 0.45 + product * 0.35;
 }

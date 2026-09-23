@@ -16,15 +16,20 @@ import { CustomersView } from "./views/CustomersView";
 import { PersonnelView } from "./views/PersonnelView";
 import { CompanyMapView } from "./views/CompanyMapView";
 import { HistoryView } from "./views/HistoryView";
+import { ResearchView } from "./views/ResearchView";
+import { researchDef, researchRate } from "../engine/research";
 import { MARKETING_AGENCIES } from "../engine/industries";
 import { agencyFitLabel, agencyFitStars, marketingAgencyFitForSegment } from "../engine/segments";
 import { TICKS_PER_QUARTER, DAYS_PER_MONTH } from "../engine/types";
 import { useGame } from "../state/useGame";
 import { inventoryUsed, warehouseUnitCapacity, maxManufacturableBatch, productionLeadDays } from "../engine/capacity";
 import { founderJourney } from "../engine/progression";
+import { categoryExpansionSpeed } from "../engine/growth";
+import { industryEntrySpeed } from "../engine/businesses";
 import { distributionMetricsForSku } from "../engine/distribution";
 import { brandById } from "../engine/brands";
 import { BrandLogoMark } from "./visualIdentity";
+import { teamEffectiveness } from "../engine/people";
 
 // ============================================================================
 // Batch 10 UX architecture
@@ -57,6 +62,7 @@ const GROUP_TABS: Record<string, NavItem[]> = {
   ],
   company: [
     { id: "company", label: "HQ", icon: "🏢", top: "mgmt", sub: "company" },
+    { id: "research", label: "Research", icon: "🔬", top: "mgmt", sub: "research" },
     { id: "strategy", label: "Strategy", icon: "♟", top: "mgmt", sub: "strategy" },
     { id: "brands", label: "Brands", icon: "🏷", top: "mgmt", sub: "vision" },
     { id: "businesses", label: "Businesses", icon: "🧱", top: "mgmt", sub: "businesses" },
@@ -69,6 +75,7 @@ function routeMeta(top: string, sub: string) {
   const map: Record<string, { title: string; eyebrow: string; description: string; group?: string }> = {
     "mgmt/personnel": { title: "People", eyebrow: "Your organization", description: "Hire, develop and assign the people who make the company better.", group: "people" },
     "mgmt/company": { title: "Company HQ", eyebrow: "Corporate office", description: "Direction, portfolio and the long-term identity of the business.", group: "company" },
+    "mgmt/research": { title: "Research & Capabilities", eyebrow: "Company development", description: "Unlock the product, organization and operating capabilities required to grow the company.", group: "company" },
     "mgmt/strategy": { title: "Strategy & Intelligence", eyebrow: "Company HQ", description: "Choose where to compete, then research what the market is telling you.", group: "company" },
     "mgmt/vision": { title: "Brands", eyebrow: "Company HQ", description: "Give each brand a reason to exist and decide how far it should stretch.", group: "company" },
     "mgmt/businesses": { title: "Businesses", eyebrow: "Company HQ", description: "Compare the industries inside your company and decide where to expand.", group: "company" },
@@ -123,6 +130,7 @@ export function Game() {
     if (overlay.top === "goals") return <GoalsOverlay world={w} onNavigate={navigate} />;
     if (overlay.top === "mgmt" && overlay.sub === "company") return <CompanyHub world={w} onNavigate={navigate} />;
     if (overlay.top === "mgmt" && overlay.sub === "personnel") return <PersonnelView world={w} hireCandidate={g.hireCandidate} startRecruitingSearch={g.startRecruitingSearch} promotePersonnel={g.promotePersonnel} firePersonnel={g.firePersonnel} />;
+    if (overlay.top === "mgmt" && overlay.sub === "research") return <ResearchView world={w} startResearch={g.startResearch} startCategoryExpansion={g.startCategoryExpansion} />;
     if (overlay.top === "mgmt" && overlay.sub === "strategy") return <div><StrategyView world={w} /><div style={{ marginTop: 14 }}><IntelligenceView world={w} commission={g.commission} /></div></div>;
     if (overlay.top === "mgmt" && overlay.sub === "vision") return <BrandView world={w} setVision={g.setVision} createBrand={g.createBrand} startCategoryExpansion={g.startCategoryExpansion} />;
     if (overlay.top === "mgmt" && overlay.sub === "businesses") return <BusinessesView world={w} startIndustryEntry={g.startIndustryEntry} />;
@@ -146,14 +154,14 @@ export function Game() {
     <div className="play-surface">
       <header className="game-hud">
         <button className="company-mark" onClick={closeOverlay} title="Campus">
-          <span className="company-gem" style={{ width: "auto", height: "auto", background: "transparent", boxShadow: "none" }}><BrandLogoMark brand={brandById(w, w.primaryBrandId)} size={34} /></span>
+          <span className="company-gem" style={w.brands.length ? { width: "auto", height: "auto", background: "transparent", boxShadow: "none" } : undefined}>{w.brands.length ? <BrandLogoMark brand={brandById(w, w.primaryBrandId)} size={34} /> : <span style={{ fontSize: 12, fontWeight: 900 }}>{w.company.split(/\s+/).map((x:string)=>x[0]).join("").slice(0,2).toUpperCase() || "BE"}</span>}</span>
           <span><b>{w.company}</b><small>{Object.keys(w.player.businesses ?? {}).length > 1 ? `${Object.keys(w.player.businesses).length} businesses` : w.cfg.label}</small></span>
         </button>
         <div className="hud-metrics"><HudMetric icon="$" label="Cash" value={fmtMoney(w.player.cash)} tone={w.player.cash < 0 ? "bad" : "normal"} /><HudMetric icon="▲" label="Profit / Q" value={fmtMoney(w.live?.income.profit || 0)} tone={(w.live?.income.profit || 0) < 0 ? "bad" : "good"} /><HudMetric icon="▥" label="Revenue / Q" value={fmtMoney(w.live?.income.netRevenue || last.revenue || 0)} /><HudMetric icon="%" label="Share" value={fmtPct(last.share || 0)} detail={shareDelta ? `${shareDelta >= 0 ? "▲" : "▼"}${Math.abs(shareDelta * 100).toFixed(1)}` : undefined} /></div>
-        <div className="hud-controls">{leadTask && <button className="task-pill" onClick={() => navigate(leadTask.top, leadTask.sub)} title={workQueue.map((t) => `${t.label}: ${t.days}d`).join(" · ")}><span>{leadTask.icon}</span><b>{leadTask.label}</b><em>{leadTask.days}d{workQueue.length > 1 ? ` · +${workQueue.length - 1}` : ""}</em></button>}{w.difficulty !== "bootstrap" && <span className={`confidence ${w.investorConfidence < .35 ? "low" : w.investorConfidence < .65 ? "mid" : "high"}`}>Backers {(w.investorConfidence * 100).toFixed(0)}%</span>}<span className="difficulty-pill">{w.difficulty}</span><button onClick={() => g.setPlaying(!g.playing)} style={{ ...ctrlBtn, fontSize: 14, padding: "6px 11px" }}>{g.playing ? "❚❚" : "▶"}</button>{[1,2,4].map((s) => <button key={s} onClick={() => g.setSpeed(s)} style={{ ...ctrlBtn, background: g.speed === s ? C.violet : C.panel, color: g.speed === s ? "#fff" : C.dim, minWidth: 34, padding: "6px 8px", fontWeight: 700 }}>{s}×</button>)}<span className="game-date">Y{year} · M{month} · D{day}</span><button onClick={g.saveNow} style={{ ...ctrlBtn, padding: "6px 9px" }}>Save</button></div>
+        <div className="hud-controls">{leadTask && <button className="task-pill" onClick={() => navigate(leadTask.top, leadTask.sub)} title={workQueue.map((t) => `${t.label}: ${t.days == null ? "Paused" : `${t.days}d`}`).join(" · ")}><span>{leadTask.icon}</span><b>{leadTask.label}</b><em>{leadTask.days == null ? "Paused" : `${leadTask.days}d`}{workQueue.length > 1 ? ` · +${workQueue.length - 1}` : ""}</em></button>}{w.difficulty !== "bootstrap" && <span className={`confidence ${w.investorConfidence < .35 ? "low" : w.investorConfidence < .65 ? "mid" : "high"}`}>Backers {(w.investorConfidence * 100).toFixed(0)}%</span>}<span className="difficulty-pill">{w.difficulty}</span><button onClick={() => g.setPlaying(!g.playing)} style={{ ...ctrlBtn, fontSize: 14, padding: "6px 11px" }}>{g.playing ? "❚❚" : "▶"}</button>{[1,2,4].map((s) => <button key={s} onClick={() => g.setSpeed(s)} style={{ ...ctrlBtn, background: g.speed === s ? C.violet : C.panel, color: g.speed === s ? "#fff" : C.dim, minWidth: 34, padding: "6px 8px", fontWeight: 700 }}>{s}×</button>)}<span className="game-date">Y{year} · M{month} · D{day}</span><button onClick={g.saveNow} style={{ ...ctrlBtn, padding: "6px 9px" }}>Save</button></div>
       </header>
 
-      <div className="campus-world"><CompanyMapView world={w} openCreator={() => openCreator()} updateRooms={g.updateOperatingRooms} buildRoom={g.buildOperatingRoom} demolishRoom={g.demolishOperatingRoom} upgradeRoom={g.upgradeOperatingRoom} retoolFactory={g.retoolFactory} onNavigate={navigate} /></div>
+      <div className="campus-world"><CompanyMapView world={w} openCreator={() => openCreator()} updateRooms={g.updateOperatingRooms} buildRoom={g.buildOperatingRoom} buildPath={g.buildCampusPath} demolishRoom={g.demolishOperatingRoom} upgradeRoom={g.upgradeOperatingRoom} retoolFactory={g.retoolFactory} installWarehouseModule={g.installWarehouseModule} onNavigate={navigate} /></div>
 
       <nav className="left-rail" aria-label="Company controls">
         <RailButton icon="◎" label="Goals" active={overlay?.top === "goals"} onClick={() => setOverlay({top:"goals",sub:"goals"})} badge={`${founderJourney(w).filter((s)=>!s.done).length}`} />
@@ -182,18 +190,21 @@ export function Game() {
 }
 
 
-type WorkQueueItem = { icon: string; label: string; days: number; top: string; sub: string };
+type WorkQueueItem = { icon: string; label: string; days: number | null; top: string; sub: string };
 function activeWorkQueue(world: any): WorkQueueItem[] {
   const items: WorkQueueItem[] = [];
-  if (world.player.talentSearch) items.push({ icon: "🔎", label: `${world.player.talentSearch.role === "product_manager" ? "PM" : world.player.talentSearch.role} search`, days: Math.ceil(world.player.talentSearch.daysLeft), top: "mgmt", sub: "personnel" });
+  if (world.player.talentSearch) items.push({ icon: "🔎", label: `${world.player.talentSearch.role === "product_manager" ? "Product" : world.player.talentSearch.role.replaceAll("_", " ")} search`, days: Math.ceil(world.player.talentSearch.daysLeft), top: "mgmt", sub: "personnel" });
+  if (world.player.research?.active) { const rp=world.player.research.active; const rate=researchRate(world); items.push({icon:rate > 0 ? "🔬" : "⏸",label:researchDef(rp.nodeId).title,days:rate > 0 ? Math.ceil(Math.max(0,rp.requiredPoints-rp.progress)/rate) : null,top:"mgmt",sub:"research"}); }
   for (const sku of world.player.skus ?? []) {
     if (sku.status === "designing" && sku.designDaysLeft > 0) items.push({ icon: "✏️", label: sku.name, days: Math.ceil(sku.designDaysLeft), top: "ops", sub: "products" });
     if (sku.status === "manufacturing" && sku.mfgDaysLeft > 0) items.push({ icon: "🏭", label: sku.name, days: Math.ceil(sku.mfgDaysLeft), top: "ops", sub: "products" });
   }
   for (const study of world.studies ?? []) if (!study.done && study.ticksLeft > 0) items.push({ icon: "🔬", label: "Research study", days: Math.ceil(study.ticksLeft), top: "mgmt", sub: "strategy" });
-  for (const business of Object.values(world.player.businesses ?? {}) as any[]) for (const project of business?.categoryExpansionProjects ?? []) if (project.daysLeft > 0) items.push({ icon: "🧪", label: "Category entry", days: Math.ceil(project.daysLeft), top: "mgmt", sub: "vision" });
-  for (const project of world.player.industryEntryProjects ?? []) if (project.daysLeft > 0) items.push({ icon: "🧱", label: "Industry entry", days: Math.ceil(project.daysLeft), top: "mgmt", sub: "businesses" });
-  return items.sort((a,b) => a.days - b.days);
+  const catRate = categoryExpansionSpeed(world);
+  for (const business of Object.values(world.player.businesses ?? {}) as any[]) for (const project of business?.categoryExpansionProjects ?? []) if (project.daysLeft > 0) items.push({ icon: catRate > 0 ? "🧪" : "⏸", label: "Category development", days: catRate > 0 ? Math.ceil(project.daysLeft / catRate) : null, top: "mgmt", sub: "research" });
+  const entryRate = industryEntrySpeed(world);
+  for (const project of world.player.industryEntryProjects ?? []) if (project.daysLeft > 0) items.push({ icon: entryRate > 0 ? "🧱" : "⏸", label: "Industry entry", days: entryRate > 0 ? Math.ceil(project.daysLeft / entryRate) : null, top: "mgmt", sub: "businesses" });
+  return items.sort((a,b) => (a.days ?? Number.POSITIVE_INFINITY) - (b.days ?? Number.POSITIVE_INFINITY));
 }
 
 function RailButton({ icon, label, active, onClick, badge }: { icon: string; label: string; active: boolean; onClick: () => void; badge?: string }) {
@@ -202,7 +213,7 @@ function RailButton({ icon, label, active, onClick, badge }: { icon: string; lab
 
 function GoalsOverlay({ world, onNavigate }: { world: any; onNavigate: (top: string, sub: string) => void }) {
   const steps = founderJourney(world); const done = steps.filter((s) => s.done).length;
-  return <div><div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 14 }}><div><b style={{ fontSize: 14 }}>{done}/{steps.length} milestones complete</b><div style={{ color: C.faint, fontSize: 10.5, marginTop: 2 }}>Goals are guidance, not a permanent banner over the campus.</div></div><div style={{ width: 180, height: 8, background: C.grid, borderRadius: 99 }}><div style={{ width: `${done/steps.length*100}%`, height: "100%", borderRadius: 99, background: C.violet }} /></div></div><div style={{ display: "grid", gap: 7 }}>{steps.map((st, i) => <button key={st.id} onClick={() => !st.done && onNavigate(st.topTab,st.subTab)} style={{ textAlign: "left", display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 8, alignItems: "center", border: `1px solid ${st.done ? "#bbf7d0" : C.line}`, background: st.done ? "#f0fdf4" : "white", borderRadius: 10, padding: 10, cursor: st.done ? "default" : "pointer", color: C.ink }}><span style={{ color: st.done ? C.green : C.faint, fontWeight: 900 }}>{st.done ? "✓" : i+1}</span><div><b style={{ fontSize: 11.5 }}>{st.label}</b><div style={{ color: C.dim, fontSize: 10.5, marginTop: 2 }}>{st.detail}</div></div>{!st.done && <span style={{ color: C.violet }}>→</span>}</button>)}</div></div>;
+  return <div><div className="goals-summary" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 14 }}><div><b style={{ fontSize: 14 }}>{done}/{steps.length} milestones complete</b><div style={{ color: C.faint, fontSize: 10.5, marginTop: 2 }}>Goals are guidance, not a permanent banner over the campus.</div></div><div className="goals-progress" style={{ width: 180, height: 8, background: C.grid, borderRadius: 99 }}><div style={{ width: `${done/steps.length*100}%`, height: "100%", borderRadius: 99, background: C.violet }} /></div></div><div style={{ display: "grid", gap: 7 }}>{steps.map((st, i) => <button key={st.id} onClick={() => !st.done && onNavigate(st.topTab,st.subTab)} style={{ textAlign: "left", display: "grid", gridTemplateColumns: "28px 1fr auto", gap: 8, alignItems: "center", border: `1px solid ${st.done ? "#bbf7d0" : C.line}`, background: st.done ? "#f0fdf4" : "white", borderRadius: 10, padding: 10, cursor: st.done ? "default" : "pointer", color: C.ink }}><span style={{ color: st.done ? C.green : C.faint, fontWeight: 900 }}>{st.done ? "✓" : i+1}</span><div><b style={{ fontSize: 11.5 }}>{st.label}</b><div style={{ color: C.dim, fontSize: 10.5, marginTop: 2 }}>{st.detail}</div></div>{!st.done && <span style={{ color: C.violet }}>→</span>}</button>)}</div></div>;
 }
 
 function HudMetric({ icon, label, value, detail, tone = "normal" }: { icon: string; label: string; value: string; detail?: string; tone?: "normal" | "good" | "bad" }) {
@@ -214,7 +225,8 @@ function CompanyHub({ world, onNavigate }: { world: any; onNavigate: (top: strin
   const activeProducts = world.player.skus.filter((s: any) => s.status === "active").length;
   const ownedIp = world.ipAssets.filter((ip: any) => ip.ownerType === "player").length;
   const cards = [
-    { icon: "♟", title: "Strategy & Intelligence", text: "Choose direction and commission the research that explains what went wrong or where opportunity sits.", top: "mgmt", sub: "strategy" },
+    { icon: "🔬", title: "Research & Capabilities", text: "Unlock larger product programs, offices, recruiting methods, sourcing and owned manufacturing.", top: "mgmt", sub: "research" },
+    { icon: "♟", title: "Strategy & Intelligence", text: "Choose direction and commission market studies that explain what went wrong or where opportunity sits.", top: "mgmt", sub: "strategy" },
     { icon: "🏷", title: "Brands", text: "Position brands, create new ones and decide which categories they can credibly enter.", top: "mgmt", sub: "vision" },
     { icon: "🧱", title: "Businesses", text: "See the operating portfolio by industry and manage expansion into new businesses.", top: "mgmt", sub: "businesses" },
     { icon: "🎬", title: "IP & Licensing", text: "Build owned IP, sign licenses and deploy them where the audience and product actually fit.", top: "mgmt", sub: "ip" },
@@ -291,7 +303,7 @@ function InventoryView({ world, openProduct }: { world: any; openProduct: (produ
         const daysCover = salesDay > 0 ? (sku.inventory + inbound) / salesDay : 999;
         const lostQ = r?.lostUnits ?? 0;
         const stockColor = lostQ > 1 || daysCover < 20 ? C.red : daysCover < 45 ? C.amber : C.green;
-        return <button key={sku.id} onClick={() => openProduct(sku.id)} style={{ width: "100%", border: 0, borderTop: `1px solid ${C.grid}`, background: "transparent", padding: "11px 0", display: "grid", gridTemplateColumns: "minmax(160px,1.2fr) repeat(4,minmax(90px,.7fr)) auto", gap: 10, alignItems: "center", fontSize: 11.5, textAlign: "left", cursor: "pointer", color: C.ink }}>
+        return <button className="inventory-product-row" key={sku.id} onClick={() => openProduct(sku.id)} style={{ width: "100%", border: 0, borderTop: `1px solid ${C.grid}`, background: "transparent", padding: "11px 0", display: "grid", gridTemplateColumns: "minmax(160px,1.2fr) repeat(4,minmax(90px,.7fr)) auto", gap: 10, alignItems: "center", fontSize: 11.5, textAlign: "left", cursor: "pointer", color: C.ink }}>
           <div><div style={{ fontWeight: 800 }}>{sku.name}</div><div style={{ color: C.faint, marginTop: 2 }}>{sku.status}{inbound > 0 ? ` · ${fmtNum(inbound)} inbound` : ""}</div></div>
           <div><div style={{ color: C.faint }}>On hand</div><b>{fmtNum(sku.inventory)}</b></div>
           <div><div style={{ color: C.faint }}>Sales / day</div><b>{salesDay > 0 ? salesDay.toFixed(salesDay < 10 ? 1 : 0) : "—"}</b></div>
@@ -338,8 +350,8 @@ function AnalysisPlaceholder({ world }: { world: any }) {
   return (
     <Panel title="📈 Analysis — by Brand & Product">
       {!live ? <div style={{ color: C.faint }}>No data yet.</div> : (
-        <div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <div className="data-table-scroll">
+          <table style={{ width: "100%", minWidth: 680, borderCollapse: "collapse", fontSize: 12 }}>
             <thead><tr style={{ color: C.faint, textAlign: "right" }}><th style={{ textAlign: "left", padding: "6px 4px" }}>Product</th><th style={{ textAlign: "left" }}>Brand</th><th>Status</th><th>Inventory</th><th>Units Sold</th><th>Contribution</th></tr></thead>
             <tbody style={{ fontFamily: "ui-monospace" }}>
               {world.player.skus.map((s: any, i: number) => {
@@ -364,6 +376,7 @@ function AnalysisPlaceholder({ world }: { world: any }) {
 
 function CampaignsView({ world, launchCampaign, openSegments, setMarketing, setBrandMarketing, setFocus }: { world: any; launchCampaign: (name: string, segmentId: string, agencyId: string, budget: number, days: number, scope?: "company" | "brand" | string) => void; openSegments: () => void; setMarketing: (v: number) => void; setBrandMarketing: (v: number) => void; setFocus: (v: string) => void }) {
   const segs = world.savedSegments;
+  const hasMarketingTeam = teamEffectiveness(world, "marketing") > 0;
   const [campSeg, setCampSeg] = React.useState(segs[0]?.id ?? "");
   const [campAgency, setCampAgency] = React.useState("");
   const [campBudget, setCampBudget] = React.useState(100000);
@@ -400,6 +413,7 @@ function CampaignsView({ world, launchCampaign, openSegments, setMarketing, setB
 
       <Panel title="Launch a Campaign">
         <div style={{ color: C.dim, fontSize: 12, lineHeight: 1.55, marginBottom: 14 }}>Choose the audience first. The game then tells you which agency/media approach fits that audience instead of asking you to guess from vague copy.</div>
+        {!hasMarketingTeam && <div style={{marginBottom:12,padding:9,border:"1px solid #fed7aa",background:"#fff7ed",borderRadius:8,color:C.amber,fontSize:10.5,fontWeight:700}}>! Marketing is locked until a Marketing specialist is seated in an office.</div>}
 
         <div style={campaignStep}><div style={campaignStepTitle}>1. TARGET AUDIENCE</div>
           {segs.length === 0 ? <div style={{ color: C.faint, fontSize: 12 }}>You have no saved audiences yet. <button style={{ ...ctrlBtn, marginLeft: 6 }} onClick={openSegments}>Create a segment</button></div> : <><div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{segs.map((s: any) => <button key={s.id} onClick={() => { setCampSeg(s.id); setCampAgency(""); }} style={{ ...ctrlBtn, background: campSeg === s.id ? C.cyan : C.panel2, color: campSeg === s.id ? "#fff" : C.dim, borderColor: campSeg === s.id ? C.cyan : C.line }}>{s.name}</button>)}</div><button style={{ ...ctrlBtn, marginTop: 7 }} onClick={openSegments}>＋ Create / edit segments</button></>}
@@ -433,24 +447,25 @@ function CampaignsView({ world, launchCampaign, openSegments, setMarketing, setB
           {agency && <div style={{ fontSize: 11, color: affordable ? C.dim : C.red, marginTop: 4 }}>Actual cost: {fmtMoney(effectiveCost)} · {agencyFitLabel(marketingAgencyFitForSegment(world, selectedSeg?.filter ?? {}, agency))}</div>}
         </div>
 
-        <button style={{ ...bigBtn, width: "100%", marginTop: 12, opacity: campSeg && campAgency && affordable ? 1 : 0.5 }} disabled={!campSeg || !campAgency || !affordable} onClick={() => launchCampaign(`${agency?.name ?? "?"} → ${scopeLabel} → ${segName ?? "all"}`, campSeg, campAgency, campBudget, campDays, campScope)}>Launch campaign</button>
+        <button title={!hasMarketingTeam ? "Seat a Marketing specialist first." : !campSeg ? "Choose a target audience first." : !campAgency ? "Choose a media/agency partner first." : !affordable ? `Need ${fmtMoney(Math.max(0, effectiveCost - world.player.cash))} more cash.` : undefined} style={{ ...bigBtn, width: "100%", marginTop: 12, opacity: hasMarketingTeam && campSeg && campAgency && affordable ? 1 : 0.5 }} disabled={!hasMarketingTeam || !campSeg || !campAgency || !affordable} onClick={() => launchCampaign(`${agency?.name ?? "?"} → ${scopeLabel} → ${segName ?? "all"}`, campSeg, campAgency, campBudget, campDays, campScope)}>Launch campaign</button>
+        {(!hasMarketingTeam || !campSeg || !campAgency || !affordable) && <div style={{ color: C.amber, fontSize: 10, marginTop: 5 }}>↳ {!hasMarketingTeam ? "Hire and seat a Marketing specialist." : !campSeg ? "Choose a target audience." : !campAgency ? "Choose a media / agency partner." : `Campaign cash shortfall: ${fmtMoney(Math.max(0, effectiveCost - world.player.cash))}.`}</div>}
       </Panel>
 
       <Panel title="Always-on marketing">
         <div style={{ color: C.dim, fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Optional background spend between campaigns. Audience and spend are managed here so Segments stays purely about defining customer groups.</div>
         <div style={{ marginBottom: 11 }}><div style={campaignStepTitle}>ALWAYS-ON TARGET</div><div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}><button onClick={() => setFocus("all")} style={{ ...ctrlBtn, background: world.player.marketingFocus === "all" ? C.cyan : C.panel2, color: world.player.marketingFocus === "all" ? "#fff" : C.dim }}>All customers</button>{segs.map((s: any) => { const key = `seg:${s.id}`; const on = world.player.marketingFocus === key; return <button key={s.id} onClick={() => setFocus(key)} style={{ ...ctrlBtn, background: on ? C.cyan : C.panel2, color: on ? "#fff" : C.dim }}>{s.name}</button>; })}<button style={{ ...ctrlBtn }} onClick={openSegments}>＋ Audience</button></div></div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12 }}>
-          <AlwaysOnPresets label="Performance / Q" value={world.player.marketingTarget} onChange={setMarketing} />
-          <AlwaysOnPresets label="Brand / Q" value={world.player.brandMarketingTarget} onChange={setBrandMarketing} />
+          <AlwaysOnPresets label="Performance / Q" value={world.player.marketingTarget} onChange={setMarketing} disabled={!hasMarketingTeam} />
+          <AlwaysOnPresets label="Brand / Q" value={world.player.brandMarketingTarget} onChange={setBrandMarketing} disabled={!hasMarketingTeam} />
         </div>
       </Panel>
     </div>
   );
 }
 
-function AlwaysOnPresets({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function AlwaysOnPresets({ label, value, onChange, disabled=false }: { label: string; value: number; onChange: (v: number) => void; disabled?: boolean }) {
   const options = [0, 50_000, 150_000, 300_000];
-  return <div><div style={{ color: C.faint, fontSize: 9.5, fontWeight: 900, marginBottom: 6 }}>{label}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 5 }}>{options.map((v) => <button key={v} onClick={() => onChange(v)} style={{ ...ctrlBtn, borderColor: value === v ? C.violet : C.line, color: value === v ? C.violet : C.dim }}>{v === 0 ? "Off" : fmtMoney(v)}</button>)}</div></div>;
+  return <div><div style={{ color: C.faint, fontSize: 9.5, fontWeight: 900, marginBottom: 6 }}>{label}</div><div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 5 }}>{options.map((v) => <button key={v} disabled={disabled && v>0} title={disabled && v>0 ? "Seat a Marketing specialist first." : undefined} onClick={() => onChange(v)} style={{ ...ctrlBtn, borderColor: value === v ? C.violet : C.line, color: value === v ? C.violet : C.dim, opacity: disabled && v>0 ? .45 : 1 }}>{v === 0 ? "Off" : fmtMoney(v)}</button>)}</div></div>;
 }
 
 const campaignStep: React.CSSProperties = { borderTop: `1px solid ${C.line}`, paddingTop: 11, marginTop: 11 };
@@ -497,6 +512,29 @@ function Shell({ children }: { children: React.ReactNode }) {
         @media(max-width:1120px){.hud-metrics .hud-metric:nth-child(4){display:none}.company-mark{min-width:175px}.hud-controls .confidence{display:none}}
         @media(max-width:900px){.hud-metrics .hud-metric:nth-child(3){display:none}.difficulty-pill{display:none}.company-mark{min-width:145px}.company-mark small{display:none}}
         @media(max-width:780px){.game-hud{padding:7px 8px;gap:5px;flex-wrap:wrap;min-height:66px}.company-mark{min-width:auto;flex:1;border-right:0}.company-gem{width:34px;height:34px;border-radius:10px}.hud-metrics{order:3;width:100%;flex:none;overflow-x:auto}.hud-metric{min-width:101px;min-height:42px;padding-left:31px}.hud-controls{margin-left:auto}.hud-controls .difficulty-pill,.hud-controls button:last-child{display:none}.game-date{font-size:8.5px;padding:7px}.screen-heading{padding:18px 14px 8px}.screen-heading h1{font-size:23px}.screen-heading p{font-size:11px}.section-tabs{padding:0 14px 5px}.game-content,.game-content.campus-content{padding:8px 11px 102px}.event-banner{margin:8px 10px 0}.bottom-dock{bottom:7px;width:calc(100vw - 12px);justify-content:space-between;border-radius:14px}.bottom-dock button{width:auto;flex:1;height:48px;padding:0 2px}.bottom-dock button span{font-size:16px}.bottom-dock button small{font-size:7.5px}.more-sheet{bottom:66px}.more-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hub-pulse{grid-template-columns:repeat(2,minmax(0,1fr))}.hub-cards{grid-template-columns:1fr}.campus-return{padding:7px 9px}.screen-heading{align-items:center}}
+        /* v1.0 mobile certification — phone is a first-class layout, not a shrunken desktop. */
+        .data-table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}.data-table-scroll table{min-width:680px}
+        @media(hover:none){button:hover{filter:none}.left-rail button:hover,.hub-cards button:hover{background:inherit}}
+        @media(max-width:640px){
+          html,body,#root,.tycoon-shell,.play-surface{height:100%;height:100dvh;max-height:100dvh;overflow:hidden}
+          .game-hud{position:fixed;left:0;right:0;top:0;height:96px;min-height:96px;padding:5px 7px calc(5px + env(safe-area-inset-top));gap:4px;display:grid;grid-template-columns:minmax(118px,1fr) auto;grid-template-rows:42px 42px;z-index:60}
+          .company-mark{min-width:0;width:100%;padding:2px 5px 2px 1px;border-right:0;gap:7px;overflow:hidden}.company-mark .company-gem{flex:0 0 auto}.company-mark span:last-child{min-width:0}.company-mark b{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.company-mark small{display:block!important;font-size:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .hud-metrics{grid-column:1/-1;grid-row:2;display:grid;width:100%;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;overflow:visible}.hud-metric{min-width:0!important;min-height:38px!important;height:38px;padding:4px 5px 4px 27px;border-radius:8px}.hud-metric:nth-child(4){display:none!important}.hud-metric .metric-icon{left:6px;width:16px;height:16px;font-size:9px}.hud-metric small{font-size:6.5px;letter-spacing:.35px}.hud-metric b{font-size:10.5px}.hud-metric em{display:none}
+          .hud-controls{grid-column:2;grid-row:1;display:flex;gap:3px;margin:0!important;justify-content:flex-end}.hud-controls .confidence,.hud-controls .difficulty-pill,.hud-controls button:last-child{display:none!important}.hud-controls>button:not(.task-pill){min-width:31px!important;height:34px;padding:4px 6px!important;font-size:10px!important;border-radius:8px}.hud-controls>button:nth-of-type(1){font-size:12px!important}.game-date{font-size:7px!important;padding:5px 6px!important;white-space:nowrap}.task-pill{position:fixed!important;top:102px;right:7px;z-index:55;min-width:0!important;max-width:116px;height:35px;padding:4px 7px;border-radius:9px;grid-template-columns:auto 1fr}.task-pill span{font-size:13px}.task-pill b{font-size:7.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.task-pill em{font-size:7px}
+          .campus-world{top:96px!important;bottom:calc(58px + env(safe-area-inset-bottom))!important}.play-surface{height:100dvh!important}
+          .left-rail{top:auto!important;bottom:max(5px,env(safe-area-inset-bottom))!important;left:5px!important;right:5px!important;padding:4px!important;gap:1px!important;display:flex!important;border-radius:13px!important;z-index:65}.left-rail button{width:auto!important;flex:1 1 0;min-width:0;min-height:49px!important;padding:2px 0!important;border-radius:9px}.left-rail button span{font-size:15px!important}.left-rail button small{font-size:6.3px!important;max-width:100%;overflow:hidden;text-overflow:ellipsis}.left-rail button i{right:1px;top:1px;min-width:14px;height:14px;font-size:7px;padding:0 3px}
+          .screen-overlay{inset:96px 0 calc(58px + env(safe-area-inset-bottom)) 0!important;padding:0!important;align-items:stretch;background:rgba(5,24,42,.34)}.overlay-card{width:100%!important;height:100%!important;max-height:none!important;border-radius:0!important;border-left:0;border-right:0;box-shadow:none}.overlay-head{padding:10px 11px 8px;gap:8px;position:sticky;top:0;z-index:5}.overlay-head h1{font-size:18px;margin:2px 0}.overlay-head p{font-size:9.5px;line-height:1.35;max-width:none}.screen-eyebrow{font-size:7px}.overlay-close{width:40px;height:40px;min-width:40px;font-size:14px}.overlay-tabs{padding:6px 8px;gap:4px;position:sticky;top:61px;z-index:4}.overlay-tabs button{min-height:36px;padding:6px 9px;font-size:9px}.overlay-body{padding:9px 8px calc(18px + env(safe-area-inset-bottom));overscroll-behavior:contain}.overlay-body>div{max-width:100%}
+          .event-toast{left:6px!important;right:6px!important;bottom:calc(62px + env(safe-area-inset-bottom))!important;max-width:none!important;padding:8px 9px;font-size:9.5px}
+          .goals-summary{align-items:flex-start!important;flex-direction:column}.goals-progress{width:100%!important}
+          .hub-pulse{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px}.hub-pulse>div{padding:8px}.hub-pulse b{font-size:16px}.hub-cards{grid-template-columns:1fr!important;gap:7px}.hub-cards button{padding:11px;gap:9px}.hub-cards button>span{font-size:21px}
+          .inventory-product-row{grid-template-columns:1fr 1fr!important;gap:6px 10px!important;padding:10px 3px!important}.inventory-product-row>div:first-child{grid-column:1/-1}.inventory-product-row>span:last-child{grid-column:1/-1;text-align:right}.inventory-product-row>div{font-size:10px}
+          .data-table-scroll{margin:0 -2px;padding-bottom:3px}.data-table-scroll table{min-width:650px}
+          .overlay-body table{font-size:10.5px;display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}.overlay-body input,.overlay-body select,.overlay-body textarea,.game-modal-card input,.game-modal-card select,.game-modal-card textarea{font-size:16px!important;min-height:42px}.overlay-body button,.game-modal-card button{touch-action:manipulation}
+          .game-modal-backdrop{padding:0!important;align-items:flex-end!important;background:rgba(4,8,12,.68)!important}.game-modal-card{max-width:none!important;width:100%!important;max-height:calc(100dvh - 18px)!important;border-radius:18px 18px 0 0!important;padding:13px 11px calc(16px + env(safe-area-inset-bottom))!important}.game-modal-head{position:sticky;top:-13px;z-index:5;background:${C.panel};padding:12px 0 8px;margin-bottom:10px!important;border-bottom:1px solid ${C.line}}.game-modal-head h2{font-size:17px!important;line-height:1.2;padding-right:8px}.game-modal-close{min-width:42px!important;min-height:42px!important}
+          .more-grid{grid-template-columns:1fr!important}
+        }
+        @media(max-width:390px){.company-mark small{display:none!important}.game-hud{grid-template-columns:minmax(92px,1fr) auto}.hud-controls>button:not(.task-pill){min-width:28px!important;padding:4px!important}.game-date{padding:5px 4px!important}.left-rail button small{font-size:5.8px!important}.overlay-head p{display:none}.overlay-tabs{top:50px}.hub-pulse{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+        @media(max-height:650px) and (max-width:900px){.game-hud{height:78px;min-height:78px;grid-template-rows:34px 34px}.campus-world{top:78px!important}.screen-overlay{inset:78px 0 calc(55px + env(safe-area-inset-bottom)) 0!important}.task-pill{top:83px}.hud-metric{height:32px!important;min-height:32px!important}.left-rail button{min-height:45px!important}}
       `}</style>
       {children}
     </div>

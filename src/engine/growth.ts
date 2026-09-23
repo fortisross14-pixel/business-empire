@@ -1,5 +1,6 @@
 import type { World } from "./types";
 import { teamEffectiveness } from "./people";
+import { hasSeatedCIO } from "./research";
 import { archetypeByKey, archetypesForIndustry, registeredIndustryIds, starterProductKeys } from "./productCatalog";
 
 export type CompanyScaleId = "startup" | "emerging" | "established" | "major" | "enterprise";
@@ -31,6 +32,7 @@ export function companyScale(w: World): CompanyScale {
 }
 
 export function brandCreationCost(w: World): number {
+  if (w.brands.length === 0) return 0; // founding brand is created after the first office is built
   const additional = Math.max(0, w.brands.length - 1);
   return 250_000 * Math.pow(2, additional);
 }
@@ -38,7 +40,9 @@ export function brandCreationCost(w: World): number {
 export function canCreateBrand(w: World): { ok: boolean; reason: string; cost: number } {
   const scale = companyScale(w);
   const cost = brandCreationCost(w);
+  if (w.brands.length === 0 && !w.player.operatingRooms.some((r) => r.id === "founder-office")) return { ok: false, reason: "Build your Founder Office before creating the company’s first brand.", cost };
   if (w.brands.length >= scale.maxBrands) return { ok: false, reason: `${scale.label} supports up to ${scale.maxBrands} brand${scale.maxBrands === 1 ? "" : "s"}. Grow the company before adding another.`, cost };
+  if (w.brands.length > 0 && teamEffectiveness(w, "marketing") <= 0) return { ok: false, reason: "Hire and seat a Marketing specialist before launching an additional brand.", cost };
   if (w.player.cash < cost) return { ok: false, reason: `Need $${Math.round(cost).toLocaleString()} to launch a new brand.`, cost };
   return { ok: true, reason: "", cost };
 }
@@ -77,13 +81,17 @@ export function canStartCategoryExpansion(w: World, productKey: string): { ok: b
   if (business.unlockedCategories.includes(productKey)) return { ok: false, reason: "Category already unlocked.", def };
   if (business.categoryExpansionProjects.some((p) => p.productKey === productKey)) return { ok: false, reason: "Expansion project already underway.", def };
   if (w.player.cash < def.investment) return { ok: false, reason: `Need $${def.investment.toLocaleString()} to fund entry.`, def };
-  const productRooms = w.player.operatingRooms.filter((r) => r.kind === "office" && r.team === "product");
+  if (!hasSeatedCIO(w)) return { ok: false, reason: "A seated Chief Innovation Officer is required to develop a new product category.", def };
+  const productRooms = w.player.operatingRooms.filter((r) => r.kind === "office" && (r.team === "product" || r.id === "founder-office"));
   if (!productRooms.length) return { ok: false, reason: "A Product office is required to enter a new category.", def };
+  if (teamEffectiveness(w, "product_manager") <= 0) return { ok: false, reason: "Seat a Product Designer before developing a new product category.", def };
   return { ok: true, reason: "", def };
 }
 
 export function categoryExpansionSpeed(w: World): number {
   const product = teamEffectiveness(w, "product_manager");
   const strategy = teamEffectiveness(w, "strategy");
-  return 0.65 + product * 0.45 + strategy * 0.35;
+  const innovation = teamEffectiveness(w, "innovation");
+  if (product <= 0 || innovation <= 0) return 0;
+  return 0.35 + product * 0.45 + strategy * 0.20 + innovation * 0.60;
 }

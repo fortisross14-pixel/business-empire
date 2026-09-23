@@ -1,8 +1,12 @@
 import type { Brand, BrandLogoLayout, BrandLogoMotif, BrandLogoShape, Cell, World } from "./types";
 import { clamp } from "./industries";
 
+function unbrandedIdentity(w: World): Brand {
+  return { id: "__unbranded", name: w.company || "Unbranded", color: "#3b82f6", positioning: "premium", createdTick: 0, industryId: w.industryId, visual: defaultBrandVisual(w.company || "Unbranded", "#3b82f6") };
+}
+
 export function primaryBrand(w: World): Brand {
-  return w.brands.find((b) => b.id === w.primaryBrandId) ?? w.brands[0];
+  return w.brands.find((b) => b.id === w.primaryBrandId) ?? w.brands[0] ?? unbrandedIdentity(w);
 }
 
 export function brandById(w: World, brandId?: string | null): Brand {

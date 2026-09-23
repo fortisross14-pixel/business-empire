@@ -10,6 +10,10 @@ export function MarketView({ world, hist, selectCell }:
   { world: World; hist: World["history"]; selectCell: (c: Coord) => void }) {
   const tier = world.player.intelDept;
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const intelligenceUnlocked = (world.player.research?.completed ?? []).includes("market_intelligence");
+  if (!intelligenceUnlocked) {
+    return <Panel><div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6 }}>Structured market intelligence has not been developed yet.</div><div style={{ color: C.faint, fontSize: 12, marginTop: 10 }}>Research <b>Market Intelligence</b> from Company → Research. After that, seat Strategy / Intelligence staff to operate the function.</div></Panel>;
+  }
   if (tier === 0) {
     return (
       <Panel>

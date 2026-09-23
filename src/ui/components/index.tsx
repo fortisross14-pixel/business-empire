@@ -60,7 +60,7 @@ export const ChoiceCard = ({ active, onClick, children, disabled, accent = C.cya
   <button onClick={onClick} disabled={disabled} style={{ flex: 1, textAlign: "left", background: active ? "linear-gradient(180deg,#eef8ff 0%,#e6f3fd 100%)" : "linear-gradient(180deg,#fff 0%,#f7faff 100%)", border: `1px solid ${active ? accent : C.line}`, borderRadius: 12, padding: 14, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? .45 : 1, color: C.ink, boxShadow: active ? "0 4px 12px rgba(22,141,226,.10)" : "0 2px 8px rgba(19,34,56,.035)" }}>{children}</button>
 );
 export const Center = ({ children }: { children: React.ReactNode }) => (
-  <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>{children}</div>
+  <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: "clamp(12px,4vw,24px)" }}>{children}</div>
 );
 export const Econ = ({ k, v, color }: { k: string; v: string; color: string }) => (
   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "3px 0" }}>
@@ -124,3 +124,8 @@ export const SelectInput = ({ label, value, onChange, children }:
     </select>
   </div>
 );
+
+export const DisabledReason = ({ children }: { children?: React.ReactNode }) => {
+  if (!children) return null;
+  return <div style={{ color: C.amber, fontSize: 10, lineHeight: 1.4, marginTop: 5 }}>↳ {children}</div>;
+};

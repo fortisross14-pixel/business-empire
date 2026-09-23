@@ -33,6 +33,15 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
   const hasProducts = selectedSkus.length > 0;
   const scale = companyScale(world);
 
+  if (world.brands.length === 0) {
+    return <div style={{ display: "grid", gap: 14 }}>
+      <Panel title="Create your founding brand">
+        <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.65 }}>Your company exists, but customers still have nothing to recognize. Create the first brand now — name, positioning, colors and logo. This founding brand has no launch fee.</div>
+      </Panel>
+      <BrandPortfolio world={world} selectedBrandId="" onSelect={() => {}} createBrand={createBrand} />
+    </div>;
+  }
+
   const segRows = world.savedSegments.map((seg) => {
     const idxs: number[] = [];
     selectedMarketWorld.cube.forEach((c, i) => {
@@ -53,7 +62,7 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
     <div>
       <CompanyGrowthPanel world={world} />
       <BrandPortfolio world={world} selectedBrandId={selectedBrand.id} onSelect={setSelectedBrandId} createBrand={createBrand} />
-      <CategoryGrowth world={world} industryId={selectedBrand.industryId} startCategoryExpansion={startCategoryExpansion} />
+      <Panel title={`${selectedCfg.label} Category Access`}><div style={{ color: C.dim, fontSize: 12, lineHeight: 1.5 }}>Category development is managed centrally from <b>Company → Research</b>. This brand can currently design: <b>{(world.player.businesses?.[selectedBrand.industryId]?.unlockedCategories ?? []).map((k) => selectedCfg.products.find((p) => p.key === k)?.label ?? k).join(", ") || "none"}</b>.</div></Panel>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <Panel title={`${selectedBrand.name} — Brand Equity`} style={{ flex: "1 1 320px" }}>
@@ -159,8 +168,9 @@ function BrandPortfolio({ world, selectedBrandId, onSelect, createBrand }: { wor
   const motifOptions: BrandLogoMotif[] = ["stripe", "star", "bolt", "orbit", "crown", "leaf", "spark"];
   const layoutOptions: BrandLogoLayout[] = ["monogram", "stacked", "wide"];
 
-  return <Panel title="Brand Portfolio">
-    <div style={{ color: C.dim, fontSize: 12, marginBottom: 12 }}>Brands share the parent company's cash, people and infrastructure, but maintain separate market reputations. A focused brand architecture can cover different price tiers without muddying the original brand. This pass also defines the reusable visual identity recipe used across the HUD, products and brand cards.</div>
+  const founding = world.brands.length === 0;
+  return <Panel title={founding ? "Founding Brand" : "Brand Portfolio"}>
+    <div style={{ color: C.dim, fontSize: 12, marginBottom: 12 }}>{founding ? "This is the first consumer identity of the company. Build it after the Founder Office so the run begins with a real empty-lot → company → brand progression." : "Brands share the parent company's cash, people and infrastructure, but maintain separate market reputations. A focused brand architecture can cover different price tiers without muddying the original brand."}</div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 10 }}>
       {world.brands.map((b) => {
         const skus = world.player.skus.filter((s) => s.brandId === b.id);
@@ -185,7 +195,7 @@ function BrandPortfolio({ world, selectedBrandId, onSelect, createBrand }: { wor
       const seeded = defaultBrandVisual(name.trim() || `Brand ${world.brands.length + 1}`, color);
       setShape(seeded.shape); setMotif(seeded.motif); setTextLayout(seeded.textLayout); setAccentColor(seeded.accentColor);
       setShowCreate(true);
-    }}>+ Launch a new brand · {fmtMoney(check.cost)}</button> : (
+    }}>{founding ? "+ Create founding brand" : `+ Launch a new brand · ${fmtMoney(check.cost)}`}</button> : (
       <div style={{ marginTop: 14, padding: 14, border: `1px solid ${C.line}`, borderRadius: 10, background: C.panel2 }}>
         {activeIndustries.length > 1 && <><FieldLabel>Business</FieldLabel><SelectInput label="Industry" value={industryId} onChange={setIndustryId}>{activeIndustries.map((id) => <option key={id} value={id}>{INDUSTRIES[id]?.label ?? id}</option>)}</SelectInput></>}
         <FieldLabel>New brand name</FieldLabel>
@@ -195,7 +205,7 @@ function BrandPortfolio({ world, selectedBrandId, onSelect, createBrand }: { wor
         <FieldLabel>Positioning</FieldLabel>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 7, marginBottom: 12 }}>{POSITIONINGS.map((p) => <ChoiceCard key={p.key} active={positioning === p.key} onClick={() => setPositioning(p.key)} accent={color}><div style={{ fontWeight: 700, fontSize: 12 }}>{p.label}</div><div style={{ color: C.faint, fontSize: 10, marginTop: 2 }}>{p.blurb}</div></ChoiceCard>)}</div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(250px, 320px) 1fr", gap: 14, alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 14, alignItems: "start" }}>
           <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, padding: 12, background: C.bg }}>
             <div style={{ color: C.faint, fontSize: 10.5, textTransform: "uppercase", letterSpacing: .6, marginBottom: 8 }}>Logo preview</div>
             <BrandLogoMark brand={{ id: "preview", name: name.trim() || "New Brand", color, positioning, createdTick: 0, industryId, visual }} size={64} withName emphasize />
@@ -213,8 +223,8 @@ function BrandPortfolio({ world, selectedBrandId, onSelect, createBrand }: { wor
           </div>
         </div>
 
-        <div style={{ color: C.faint, fontSize: 10.5, marginTop: 10 }}>Launch investment: {fmtMoney(check.cost)}. The new brand starts with no equity; it receives only a small corporate halo from sister brands.</div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}><button style={ctrlBtn} onClick={() => setShowCreate(false)}>Cancel</button><button style={{ ...bigBtn, background: color, opacity: name.trim() && check.ok ? 1 : .5 }} disabled={!name.trim() || !check.ok} onClick={() => { if (createBrand(name, color, positioning, industryId, visual)) { setName(""); setShowCreate(false); } }}>Launch {name.trim() || "brand"}</button></div>
+        <div style={{ color: C.faint, fontSize: 10.5, marginTop: 10 }}>{founding ? "Founding brand · no launch fee. Its reputation starts at zero and must be earned through products and execution." : `Launch investment: ${fmtMoney(check.cost)}. The new brand starts with no equity; it receives only a small corporate halo from sister brands.`}</div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12, alignItems: "end" }}><button style={ctrlBtn} onClick={() => setShowCreate(false)}>Cancel</button><div style={{ display: "grid", justifyItems: "end" }}><button title={!name.trim() ? "Give the brand a name first." : !check.ok ? check.reason : undefined} style={{ ...bigBtn, background: color, opacity: name.trim() && check.ok ? 1 : .5 }} disabled={!name.trim() || !check.ok} onClick={() => { if (createBrand(name, color, positioning, industryId, visual)) { setName(""); setShowCreate(false); } }}>Launch {name.trim() || "brand"}</button>{(!name.trim() || !check.ok) && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 4 }}>↳ {!name.trim() ? "Give the brand a name first." : check.reason}</div>}</div></div>
       </div>
     )}
     {!check.ok && !showCreate && <div style={{ color: C.amber, fontSize: 11, marginTop: 7 }}>{check.reason}</div>}

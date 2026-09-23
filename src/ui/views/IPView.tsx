@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import type { IPAsset, World } from "../../engine/types";
 import { C, bigBtn, ctrlBtn, fmtMoney, fmtNum } from "../theme";
-import { FieldLabel, Panel, SelectInput, TextInput } from "../components";
+import { DisabledReason, FieldLabel, Panel, SelectInput, TextInput } from "../components";
 import { INDUSTRIES } from "../../engine/industries";
 import {
   activeIPContract,
@@ -18,6 +18,7 @@ import {
 } from "../../engine/ip";
 import { archetypeByKey } from "../../engine/productCatalog";
 import { IPBadge } from "../visualIdentity";
+import { teamEffectiveness } from "../../engine/people";
 
 interface ActionResult { ok: boolean; reason?: string; }
 
@@ -73,6 +74,7 @@ function OriginalIPCreator({ world, createIP }: { world: World; createIP: (name:
   const [audience, setAudience] = useState(IP_AUDIENCE_PRESETS[0].id);
   const [selected, setSelected] = useState<string[]>(() => families.filter((f) => f.industryId === "toys").slice(0, 3).map((f) => f.key));
   const [message, setMessage] = useState<string | null>(null);
+  const marketingReady = teamEffectiveness(world, "marketing") > 0;
   const grouped = useMemo(() => {
     const map: Record<string, typeof families> = {};
     for (const family of families) (map[family.industryId] ??= []).push(family);
@@ -120,7 +122,8 @@ function OriginalIPCreator({ world, createIP }: { world: World; createIP: (name:
       </div>
     </div>
     {message && <div style={{ color: message.startsWith("Original") ? C.green : C.amber, fontSize: 11.5, marginTop: 10 }}>{message}</div>}
-    <button disabled={!name.trim() || selected.length === 0 || world.player.cash < ORIGINAL_IP_CREATION_COST} onClick={submit} style={{ ...bigBtn, marginTop: 12, opacity: !name.trim() || selected.length === 0 || world.player.cash < ORIGINAL_IP_CREATION_COST ? .45 : 1 }}>Create IP</button>
+    <button disabled={!marketingReady || !name.trim() || selected.length === 0 || world.player.cash < ORIGINAL_IP_CREATION_COST} title={!marketingReady ? "Seat a Marketing specialist before developing original consumer IP." : !name.trim() ? "Name the IP first." : selected.length === 0 ? "Choose at least one compatible product family." : world.player.cash < ORIGINAL_IP_CREATION_COST ? `Need ${fmtMoney(ORIGINAL_IP_CREATION_COST - world.player.cash)} more cash.` : undefined} onClick={submit} style={{ ...bigBtn, marginTop: 12, opacity: marketingReady && name.trim() && selected.length > 0 && world.player.cash >= ORIGINAL_IP_CREATION_COST ? 1 : .45 }}>Create IP</button>
+    {(!marketingReady || !name.trim() || selected.length === 0 || world.player.cash < ORIGINAL_IP_CREATION_COST) && <DisabledReason>{!marketingReady ? "Seat a Marketing specialist before developing an original consumer IP." : !name.trim() ? "Name the IP before creating it." : selected.length === 0 ? "Select at least one compatible product family." : `You need ${fmtMoney(ORIGINAL_IP_CREATION_COST - world.player.cash)} more cash for development.`}</DisabledReason>}
   </Panel>;
 }
 
@@ -152,6 +155,7 @@ function LicenseOffer({ world, ip, onLicense }: { world: World; ip: IPAsset; onL
   const [message, setMessage] = useState<string | null>(null);
   const terms = contractTerms(ip, years);
   const strength = ipCommercialStrength(ip);
+  const commercialOwner = teamEffectiveness(world, "strategy") > 0 || teamEffectiveness(world, "marketing") > 0;
   const sign = () => {
     const result = onLicense(ip.id, years);
     setMessage(result.ok ? `${ip.name} licensed.` : result.reason ?? "Could not sign license.");
@@ -171,14 +175,15 @@ function LicenseOffer({ world, ip, onLicense }: { world: World; ip: IPAsset; onL
         <Term label="Minimum guarantee" value={fmtMoney(terms.minimumGuarantee)} />
         <Term label="Royalty" value={`${(terms.royaltyRate * 100).toFixed(1)}% net sales`} />
       </div>
-      <button disabled={world.player.cash < terms.minimumGuarantee} onClick={sign} style={{ ...bigBtn, width: "100%", marginTop: 10, fontSize: 12, opacity: world.player.cash < terms.minimumGuarantee ? .45 : 1 }}>License {ip.name}</button>
+      <button disabled={!commercialOwner || world.player.cash < terms.minimumGuarantee} title={!commercialOwner ? "Seat a Strategy or Marketing specialist before negotiating external IP licenses." : world.player.cash < terms.minimumGuarantee ? `Need ${fmtMoney(terms.minimumGuarantee - world.player.cash)} more cash for the minimum guarantee.` : undefined} onClick={sign} style={{ ...bigBtn, width: "100%", marginTop: 10, fontSize: 12, opacity: commercialOwner && world.player.cash >= terms.minimumGuarantee ? 1 : .45 }}>License {ip.name}</button>
+      {!commercialOwner ? <DisabledReason>Seat a Strategy or Marketing specialist to own the licensing negotiation.</DisabledReason> : world.player.cash < terms.minimumGuarantee && <DisabledReason>Minimum guarantee shortfall: {fmtMoney(terms.minimumGuarantee - world.player.cash)}.</DisabledReason>}
     </> : null}
     {message && <div style={{ color: message.endsWith("licensed.") ? C.green : C.amber, fontSize: 10.5, marginTop: 7 }}>{message}</div>}
   </div>;
 }
 
 function IPMetrics({ ip }: { ip: IPAsset }) {
-  return <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginTop: 10 }}>
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(105px,1fr))", gap: 6, marginTop: 10 }}>
     <Meter label="Aware" value={ip.awareness} />
     <Meter label="Momentum" value={Math.min(1, ip.momentum / 1.8)} text={`${ip.momentum.toFixed(2)}×`} />
     <Meter label="Prestige" value={ip.prestige} />
