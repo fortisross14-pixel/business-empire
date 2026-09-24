@@ -129,7 +129,7 @@ export function Game() {
     if (!overlay) return null;
     if (overlay.top === "goals") return <GoalsOverlay world={w} onNavigate={navigate} />;
     if (overlay.top === "mgmt" && overlay.sub === "company") return <CompanyHub world={w} onNavigate={navigate} />;
-    if (overlay.top === "mgmt" && overlay.sub === "personnel") return <PersonnelView world={w} hireCandidate={g.hireCandidate} startRecruitingSearch={g.startRecruitingSearch} promotePersonnel={g.promotePersonnel} firePersonnel={g.firePersonnel} />;
+    if (overlay.top === "mgmt" && overlay.sub === "personnel") return <PersonnelView world={w} hireCandidate={g.hireCandidate} startRecruitingSearch={g.startRecruitingSearch} promotePersonnel={g.promotePersonnel} trainPersonnel={g.trainPersonnel} firePersonnel={g.firePersonnel} />;
     if (overlay.top === "mgmt" && overlay.sub === "research") return <ResearchView world={w} startResearch={g.startResearch} startCategoryExpansion={g.startCategoryExpansion} />;
     if (overlay.top === "mgmt" && overlay.sub === "strategy") return <div><StrategyView world={w} /><div style={{ marginTop: 14 }}><IntelligenceView world={w} commission={g.commission} /></div></div>;
     if (overlay.top === "mgmt" && overlay.sub === "vision") return <BrandView world={w} setVision={g.setVision} createBrand={g.createBrand} startCategoryExpansion={g.startCategoryExpansion} />;
@@ -183,7 +183,7 @@ export function Game() {
         </section>
       </div>}
 
-      {g.modal === "creator" && <ProductCreator world={w} baseSku={creatorBase} onCreate={(spec) => { g.createProduct(spec); setCreatorBaseId(null); }} onClose={() => { setCreatorBaseId(null); g.setModal(null); }} />}
+      {g.modal === "creator" && <ProductCreator world={w} baseSku={creatorBase} onCreate={(spec) => { const result = g.createProduct(spec); if (result.ok) setCreatorBaseId(null); return result; }} onClose={() => { setCreatorBaseId(null); g.setModal(null); }} />}
       {g.modal === "contract" && <ContractModal world={w} onSign={g.signContract} onClose={() => g.setModal(null)} />}
     </div>
   </Shell>;
@@ -195,6 +195,7 @@ function activeWorkQueue(world: any): WorkQueueItem[] {
   const items: WorkQueueItem[] = [];
   if (world.player.talentSearch) items.push({ icon: "🔎", label: `${world.player.talentSearch.role === "product_manager" ? "Product" : world.player.talentSearch.role.replaceAll("_", " ")} search`, days: Math.ceil(world.player.talentSearch.daysLeft), top: "mgmt", sub: "personnel" });
   if (world.player.research?.active) { const rp=world.player.research.active; const rate=researchRate(world); items.push({icon:rate > 0 ? "🔬" : "⏸",label:researchDef(rp.nodeId).title,days:rate > 0 ? Math.ceil(Math.max(0,rp.requiredPoints-rp.progress)/rate) : null,top:"mgmt",sub:"research"}); }
+  for (const training of world.player.trainingPrograms ?? []) { const person=world.player.personnel.find((p:any)=>p.id===training.personnelId); items.push({ icon:"🎓", label:`${person?.name ?? "Employee"} training`, days:Math.ceil(training.daysLeft), top:"mgmt", sub:"personnel" }); }
   for (const sku of world.player.skus ?? []) {
     if (sku.status === "designing" && sku.designDaysLeft > 0) items.push({ icon: "✏️", label: sku.name, days: Math.ceil(sku.designDaysLeft), top: "ops", sub: "products" });
     if (sku.status === "manufacturing" && sku.mfgDaysLeft > 0) items.push({ icon: "🏭", label: sku.name, days: Math.ceil(sku.mfgDaysLeft), top: "ops", sub: "products" });

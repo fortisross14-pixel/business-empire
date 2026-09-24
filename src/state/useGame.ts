@@ -8,11 +8,11 @@ import { launchInheritance } from "../engine/brandEquity";
 import { deriveUnitCost, deriveQuality } from "../engine/economics";
 import { manufacturingStandard } from "../engine/productDesign";
 import { canCreateProduct, canProduce, productionLeadDays, productProjectLockedPeople, productProjectTierAccess } from "../engine/capacity";
-import { CAMPUS_PATH_COST, canBuildCampusPath, facilityUpgradeQuote, roleFitsRoom, roomTouchesConnectedPath, sanitizeOperatingRooms, syncDerivedDepartments, storageModuleRequirement, WAREHOUSE_MODULE_COST } from "../engine/infrastructure";
+import { CAMPUS_PATH_COST, canBuildCampusPath, facilityBuildRequirement, facilityUpgradeQuote, facilityUpgradeRequirement, productCenterTypeForIndustry, roleFitsRoom, roomSupportsProductDesign, roomTouchesConnectedPath, sanitizeOperatingRooms, syncDerivedDepartments, storageModuleRequirement, WAREHOUSE_MODULE_COST } from "../engine/infrastructure";
 import { hasAutosave, loadWorld, saveWorld, clearAutosave } from "../engine/persistence";
-import { supplierById, supplierSupportsProduct } from "../engine/suppliers";
+import { supplierById, supplierSupportsProduct, suppliersForProduct } from "../engine/suppliers";
 import { canNegotiatePartner, deriveSkuChannels, partnerSupportsIndustry } from "../engine/distribution";
-import { archivePerson, candidateToPersonnel, canPromotePerson, isProductLead, productManagerEffectiveness, productProjectTeamEffectiveness, promotePerson, startTalentSearch, teamEffectiveness } from "../engine/people";
+import { archivePerson, candidateToPersonnel, canPromotePerson, isProductLead, productManagerEffectiveness, productProjectTeamEffectiveness, promotePerson, startTalentSearch, startPersonnelTraining, teamEffectiveness } from "../engine/people";
 import { recordBuildingEvent, recordChronicle, recordPeopleEvent, recordProductLaunch } from "../engine/chronicle";
 import { canCreateBrand, canStartCategoryExpansion } from "../engine/growth";
 import { canStartIndustryEntry } from "../engine/businesses";
@@ -23,7 +23,7 @@ import { deriveSafetyScore, TESTING_LEVELS } from "../engine/productDynamics";
 import { createOriginalIP, setSkuIP, signIPLicense } from "../engine/ip";
 import { difficultyConfig } from "../engine/difficulty";
 import { canManageSegments, segmentTargetProfile } from "../engine/segments";
-import { facilityResearchRequirement, hasResearch, officeUpgradeResearchRequirement, startResearch as beginResearch } from "../engine/research";
+import { hasResearch, startResearch as beginResearch } from "../engine/research";
 
 const fmtLaunchPrice = (v: number) => `$${Math.round(v * 100) / 100}`;
 
@@ -97,23 +97,28 @@ export function useGame() {
 
   const createProduct = useCallback((spec: ProductSpec) => {
     const w = worldRef.current!;
+    const fail = (reason: string) => ({ ok: false as const, reason });
     const check = canCreateProduct(w);
-    if (!check.ok) return;
+    if (!check.ok) return fail(check.reason);
     const archetype = archetypeByKey(spec.productKey);
-    if (!archetype) return;
+    if (!archetype) return fail("That product type is not available in the current product catalog.");
     const business = w.player.businesses?.[archetype.industryId];
-    if (!business || business.status !== "active" || !business.unlockedCategories.includes(spec.productKey)) return;
+    if (!business || business.status !== "active") return fail(`Activate the ${INDUSTRIES[archetype.industryId]?.label ?? archetype.industryId} business before designing this product.`);
+    if (!business.unlockedCategories.includes(spec.productKey)) return fail("Unlock this product category before starting the design.");
     const brand = w.brands.find((b) => b.id === spec.brandId);
-    if (!brand || brand.industryId !== archetype.industryId) return;
-    if (spec.method === "outsource") {
+    if (!brand) return fail("Choose an existing brand for this product.");
+    if (brand.industryId !== archetype.industryId) return fail("The selected brand belongs to a different industry.");
+    // Manufacturing is deliberately chosen after design. Only validate a supplier if an older save
+    // or caller explicitly supplies one; a design must never be blocked by a skincare-only default supplier.
+    if (spec.method === "outsource" && spec.supplierId) {
       const supplier = supplierById(spec.supplierId);
-      if (!supplier || !supplierSupportsProduct(supplier, spec.productKey)) return;
+      if (!supplierSupportsProduct(supplier, spec.productKey)) return fail(`${supplier.name} cannot manufacture this product family. Choose a compatible partner after design.`);
     }
-    const productRooms = w.player.operatingRooms.filter(r => r.kind === "office" && (r.team === "product" || r.id === "founder-office"));
-    if (!productRooms.length) return;
+    const productRooms = w.player.operatingRooms.filter((r) => roomSupportsProductDesign(r, archetype.industryId));
+    if (!productRooms.length) return fail("Build a Founder Office or a dedicated Product office first.");
     const tier = spec.projectTier ?? "A";
-    const tierAccess = productProjectTierAccess(w, tier);
-    if (!tierAccess.ok) return;
+    const tierAccess = productProjectTierAccess(w, tier, spec.productKey);
+    if (!tierAccess.ok) return fail(tierAccess.reason);
     const id = `P${w.tick}_${w.player.skus.length}_${Math.floor(Math.random()*10000)}`;
     const lockedPeople = productProjectLockedPeople(w);
     const seated = new Set(productRooms.flatMap((r) => r.assignedPersonnelIds));
@@ -122,20 +127,28 @@ export function useGame() {
     const leadOrSolo = tier === "A"
       ? (requestedLead ?? [...availableProductStaff].sort((a, b) => productManagerEffectiveness(b, spec.productKey) - productManagerEffectiveness(a, spec.productKey))[0])
       : (requestedLead && isProductLead(requestedLead) ? requestedLead : [...availableProductStaff].filter(isProductLead).sort((a, b) => productManagerEffectiveness(b, spec.productKey) - productManagerEffectiveness(a, spec.productKey))[0]);
-    if (!leadOrSolo) return;
+    if (!leadOrSolo) return fail(tier === "A" ? "Assign an available Product Designer to a product-capable office." : "Assign an eligible Product Lead to the project.");
     const designerIds = [...new Set(spec.designerIds ?? [])].filter((id) => id !== leadOrSolo.id && availableProductStaff.some((p) => p.id === id));
     const requiredDesigners = tier === "AAA" ? 3 : tier === "AA" ? 1 : 0;
-    if (designerIds.length !== requiredDesigners) return;
+    if (designerIds.length !== requiredDesigners) return fail(`Assign ${requiredDesigners} additional Product Designer${requiredDesigners === 1 ? "" : "s"} to this ${tier} project.`);
+    if (tier === "AAA") {
+      const centerType = productCenterTypeForIndustry(archetype.industryId);
+      if (centerType) {
+        const teamIds = [leadOrSolo.id, ...designerIds];
+        const center = w.player.operatingRooms.find((r) => r.facilityType === centerType && (r.upgradeLevel ?? 1) >= 2 && teamIds.every((id) => r.assignedPersonnelIds.includes(id)));
+        if (!center) return fail(`Seat the entire AAA team together in a Level II ${archetype.industryId === "toys" ? "Toy Center" : "Beauty Center"}.`);
+      }
+    }
     const teamScore = productProjectTeamEffectiveness(w, tier, spec.productKey, leadOrSolo.id, designerIds);
     const pmRoom = productRooms.find((r) => r.assignedPersonnelIds.includes(leadOrSolo.id));
     if (pmRoom && !pmRoom.productKey) pmRoom.productKey = spec.productKey;
     const expertise = Math.max(w.player.expertise.category[spec.productKey] ?? 0, w.player.expertise.industry[archetype.industryId] ?? 0);
-    const sku = buildSku(w, { ...spec, pmSkill: teamScore, pmId: leadOrSolo.id, pmName: leadOrSolo.name, designerIds, designDepth: spec.designDepth ?? (tier === "AAA" ? "breakthrough" : tier === "AA" ? "advanced" : "standard") }, id, w.tick, expertise);
-    // product starts in "designing" state — no inventory, no channels, no cash spent yet
+    const sku = buildSku(w, { ...spec, supplierId: null, pmSkill: teamScore, pmId: leadOrSolo.id, pmName: leadOrSolo.name, designerIds, designDepth: spec.designDepth ?? (tier === "AAA" ? "breakthrough" : tier === "AA" ? "advanced" : "standard") }, id, w.tick, expertise);
     w.player.skus.push(sku);
     const market = ensureIndustryMarket(w, sku.industryId); market.fitCacheDirty = true;
     if (sku.industryId === w.industryId) w.fitCacheDirty = true;
     setModal(null); rerender();
+    return { ok: true as const, reason: "" };
   }, [rerender]);
 
   // Start manufacturing a designed product — costs cash, takes time
@@ -150,7 +163,8 @@ export function useGame() {
     const pt = cfg.products.find((p) => p.key === s.productKey);
     if (!pt) return;
     const standard = manufacturingStandard(s.manufacturingStars ?? 3);
-    const supplier = s.method === "outsource" ? supplierById(s.supplierId) : null;
+    const supplier = s.method === "outsource" && s.supplierId ? supplierById(s.supplierId) : null;
+    if (s.method === "outsource" && (!supplier || !supplierSupportsProduct(supplier, s.productKey))) return;
     s.unitCost = deriveUnitCost(pt, s.method, standard.materialQuality, standard.productionQuality, supplier?.costMult ?? 1, w.materialPriceIndex) * TESTING_LEVELS[s.testingLevel ?? "standard"].costMult;
     const check = canProduce(w, qty, s.unitCost, s.method, s.supplierId, s.productKey);
     if (!check.ok) return;
@@ -195,7 +209,7 @@ export function useGame() {
     if (!s || s.inventory > 0 || (s.mfgBatchSize ?? 0) > 0 || s.status === "active") return;
     const pt = (INDUSTRIES[s.industryId] ?? w.cfg).products.find((p) => p.key === s.productKey)!;
     const standard = manufacturingStandard(stars);
-    const supplier = s.method === "outsource" ? supplierById(s.supplierId) : null;
+    const supplier = s.method === "outsource" && s.supplierId ? supplierById(s.supplierId) : null;
     s.manufacturingStars = standard.stars;
     s.quality = deriveQuality(standard.materialQuality, standard.productionQuality, supplier?.qualityAdj ?? 0);
     s.unitCost = deriveUnitCost(pt, s.method, standard.materialQuality, standard.productionQuality, supplier?.costMult ?? 1, w.materialPriceIndex) * TESTING_LEVELS[s.testingLevel ?? "standard"].costMult;
@@ -208,8 +222,10 @@ export function useGame() {
     const pt = (INDUSTRIES[s.industryId] ?? w.cfg).products.find((p) => p.key === s.productKey)!;
     const standard = manufacturingStandard(s.manufacturingStars ?? 3);
     s.method = method;
-    const requestedSupplier = method === "outsource" ? supplierById(supplierId ?? s.supplierId ?? "flexform") : null;
-    if (requestedSupplier && !supplierSupportsProduct(requestedSupplier, s.productKey)) return;
+    const compatibleFallbackId = suppliersForProduct(s.productKey)[0]?.id ?? null;
+    const requestedSupplierId = method === "outsource" ? (supplierId ?? s.supplierId ?? compatibleFallbackId) : null;
+    const requestedSupplier = requestedSupplierId ? supplierById(requestedSupplierId) : null;
+    if (method === "outsource" && (!requestedSupplier || !supplierSupportsProduct(requestedSupplier, s.productKey))) return;
     s.supplierId = requestedSupplier?.id ?? null;
     const supplier = requestedSupplier;
     s.quality = deriveQuality(standard.materialQuality, standard.productionQuality, supplier?.qualityAdj ?? 0);
@@ -365,6 +381,7 @@ export function useGame() {
     const p = w.player.personnel.find((x) => x.id === id);
     if (!p) return;
     recordPeopleEvent(w, p.id, `${p.name} left the company`, `${p.name}, ${p.title}, left after being released by the company.`, "departure", p.level >= 3 ? 2 : 1);
+    w.player.trainingPrograms = (w.player.trainingPrograms ?? []).filter((program) => program.personnelId !== id);
     archivePerson(w, id, "Left after being released by the company.");
     syncDerivedDepartments(w);
     rerender();
@@ -524,10 +541,11 @@ export function useGame() {
 
   const buildOperatingRoom = useCallback((incoming: World["player"]["operatingRooms"][number]) => {
     const w = worldRef.current!;
-    const gate = facilityResearchRequirement(w, incoming.kind);
+    const facilityType = incoming.facilityType ?? (incoming.kind as any);
+    const gate = facilityBuildRequirement(w, facilityType);
     if (gate) return false;
     const firstOffice = incoming.kind === "office" && !w.player.operatingRooms.some((r) => r.kind === "office");
-    const room = firstOffice ? { ...incoming, id: "founder-office", name: "Founder Office", team: "unassigned" as const, capacity: 4 } : incoming;
+    const room = firstOffice ? { ...incoming, id: "founder-office", name: "Founder Office", team: "unassigned" as const, capacity: 4, facilityType: "office" as const } : { ...incoming, facilityType };
     if (room.x < 0 || room.y < 0 || room.x + room.w > 48 || room.y + room.h > 48) return false;
     const overlapsRoom = w.player.operatingRooms.some((r) => room.x < r.x + r.w && room.x + room.w > r.x && room.y < r.y + r.h && room.y + room.h > r.y);
     if (overlapsRoom) return false;
@@ -616,7 +634,7 @@ export function useGame() {
     if (!room) return { ok: false, reason: "Facility not found." };
     const quote = facilityUpgradeQuote(room);
     if (!quote) return { ok: false, reason: "This facility is already at maximum capacity." };
-    if (room.kind === "office") { const gate = officeUpgradeResearchRequirement(w, quote.nextLevel); if (gate) return { ok: false, reason: gate }; }
+    const upgradeGate = facilityUpgradeRequirement(w, room, quote.nextLevel); if (upgradeGate) return { ok: false, reason: upgradeGate };
     if (w.player.cash < quote.cost) return { ok: false, reason: "Not enough cash for this upgrade." };
     w.player.cash -= quote.cost;
     room.capacity += quote.capacityGain;
@@ -627,6 +645,13 @@ export function useGame() {
     recordChronicle(w, { kind: "operations", importance: 1, title: `${room.name} expanded`, text: `${room.name} reached facility level ${quote.nextLevel}, adding ${quote.capacityGain.toLocaleString()} capacity.`, icon: "🏗", entityType: "building", entityId: room.id, tags: ["operations", "building", "upgrade"] });
     rerender();
     return { ok: true };
+  }, [rerender]);
+
+  const trainPersonnel = useCallback((personnelId: string) => {
+    const w = worldRef.current!;
+    const result = startPersonnelTraining(w, personnelId);
+    if (result.ok) rerender();
+    return result;
   }, [rerender]);
 
   const demolishOperatingRoom = useCallback((roomId: string) => {
@@ -645,6 +670,6 @@ export function useGame() {
     setPackaging, setProductPrice, setProductQuality, setProductionSetup, retargetProduct, releaseProduct, discardProduct, setIP, createIP, licenseIP,
     setMarketing, setBrandMarketing, setBackOffice, setFocus, selectCell, commission, borrow, repay,
     saveSegment, deleteSegment, updateSegment, launchCampaign, startResearch,
-    hireCandidate, startRecruitingSearch, promotePersonnel, firePersonnel, setVision, createBrand, startCategoryExpansion, startIndustryEntry, updateOperatingRooms, buildOperatingRoom, buildCampusPath, buildCampusPathLine, demolishOperatingRoom, upgradeOperatingRoom, retoolFactory, installWarehouseModule,
+    hireCandidate, startRecruitingSearch, promotePersonnel, trainPersonnel, firePersonnel, setVision, createBrand, startCategoryExpansion, startIndustryEntry, updateOperatingRooms, buildOperatingRoom, buildCampusPath, buildCampusPathLine, demolishOperatingRoom, upgradeOperatingRoom, retoolFactory, installWarehouseModule,
   };
 }

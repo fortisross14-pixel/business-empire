@@ -23,8 +23,10 @@ export function founderJourney(w: World): FounderStep[] {
   const designers = w.player.personnel.filter((p) => p.role === "product_manager" && seatedIds.has(p.id));
   const sourcing = w.player.personnel.filter((p) => p.role === "operations" && seatedIds.has(p.id));
   const marketers = w.player.personnel.filter((p) => p.role === "marketing" && seatedIds.has(p.id));
-  const innovators = w.player.personnel.filter((p) => p.role === "innovation" && seatedIds.has(p.id));
-  const researchRoom = Boolean((founderOffice?.capacity ?? 0) >= 8 || w.player.operatingRooms.filter((r)=>r.kind==="office").length > 1);
+  const researchCenter = w.player.operatingRooms.find((r) => r.facilityType === "research_center");
+  const researchSeatIds = new Set(researchCenter?.assignedPersonnelIds ?? []);
+  const innovators = w.player.personnel.filter((p) => p.role === "innovation" && researchSeatIds.has(p.id));
+  const growthOffice = Boolean((founderOffice?.upgradeLevel ?? 1) >= 2 || (founderOffice?.capacity ?? 0) >= 8);
   const first = w.player.skus[0];
   const productionReady = first ? productionCapacity(w, first.method, first.supplierId, first.productKey) > 0 : sourcing.length > 0 || w.player.operatingRooms.some((r) => r.kind === "factory" || r.kind === "outsourcing");
   const warehouseReady = w.player.operatingRooms.some((r) => r.kind === "warehouse");
@@ -48,8 +50,9 @@ export function founderJourney(w: World): FounderStep[] {
     { id: "release", label: "Release the product", detail: "Launch when the commercial setup makes sense. Marketing can amplify fit; it cannot repair a bad proposition.", done: released, topTab: "ops", subTab: "products" },
     { id: "sale", label: "Win the first customers", detail: "Watch the launch convert into real sales, then diagnose what worked and what did not.", done: units > 0, topTab: "ops", subTab: "products" },
     { id: "traction", label: "Reach 10,000 lifetime units", detail: "Replenish, reprice, retarget and iterate until the business has real traction.", done: units >= 10_000, topTab: "ops", subTab: "products" },
-    { id: "expand-office", label: "Make room to grow", detail: "Your four-seat startup is full. Expand the Founder Office to 8 seats or build another office before adding specialist leadership.", done: researchRoom, topTab: "mgmt", subTab: "hq" },
-    { id: "hire-cio", label: "Hire a Chief Innovation Officer", detail: "Corporate research needs an owner. Recruit a CIO and assign them to an open office seat.", done: innovators.length > 0, topTab: "mgmt", subTab: "personnel" },
+    { id: "expand-office", label: "Grow the Founder Office", detail: "Upgrade Founder Office I to Level II. This is the first visible step from startup to a real campus and unlocks specialized facilities.", done: growthOffice, topTab: "mgmt", subTab: "hq" },
+    { id: "research-center", label: "Build a Research Center", detail: "Company research needs a physical home. Build a connected Research Center before hiring innovation leadership.", done: Boolean(researchCenter), topTab: "mgmt", subTab: "hq" },
+    { id: "hire-cio", label: "Hire a Chief Innovation Officer", detail: "Corporate research needs an owner. Recruit a CIO and assign them to a seat in the Research Center.", done: innovators.length > 0, topTab: "mgmt", subTab: "personnel" },
     { id: "research", label: "Develop the next capability", detail: "With a seated CIO, open Company → Research and choose what the company should learn next: AA programs, recruiting, sourcing, manufacturing, storage or organizational scale.", done: (w.player.research?.completed?.length ?? 0) > 0, topTab: "mgmt", subTab: "research" },
   ];
 }

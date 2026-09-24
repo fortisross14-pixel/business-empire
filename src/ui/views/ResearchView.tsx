@@ -6,6 +6,7 @@ import { RESEARCH_NODES, canStartResearch, hasResearch, hasSeatedCIO, researchDe
 import { INDUSTRIES } from "../../engine/industries";
 import { canStartCategoryExpansion, categoryExpansionSpeed, categoryGrowthDef } from "../../engine/growth";
 import { teamEffectiveness } from "../../engine/people";
+import { productCenterLevel, productCenterTypeForIndustry, researchCenterLevel, roomSupportsProductDesign } from "../../engine/infrastructure";
 
 export function ResearchView({ world, startResearch, startCategoryExpansion }: {
   world: World;
@@ -17,10 +18,15 @@ export function ResearchView({ world, startResearch, startCategoryExpansion }: {
   const hasCio = hasSeatedCIO(world);
   const branches = ["Product","Organization","Operations","Market"] as const;
   const categoryRate = categoryExpansionSpeed(world);
+  const primaryIndustry = world.industryId;
+  const aaWorkspaceReady = world.player.operatingRooms.some((r) => roomSupportsProductDesign(r, primaryIndustry) && r.capacity >= 8);
+  const specializedCenter = productCenterTypeForIndustry(primaryIndustry);
+  const aaaWorkspaceReady = specializedCenter ? productCenterLevel(world, primaryIndustry) >= 2 : world.player.operatingRooms.some((r) => roomSupportsProductDesign(r, primaryIndustry) && r.capacity >= 16);
+  const aaaInfrastructureReady = researchCenterLevel(world) >= 2 && aaaWorkspaceReady;
   return <div style={{display:"grid",gap:14}}>
     <Panel title="🔬 Company Development">
-      <div style={{color:C.dim,fontSize:12.5,lineHeight:1.6}}>Capabilities unlock what the company is actually able to coordinate. Research is owned by a seated Chief Innovation Officer; Product, Strategy and Operations teams can support the work, but no CIO means no corporate research progress.</div>
-      <div style={{marginTop:10,padding:10,border:`1px solid ${hasCio?"#bbf7d0":"#fed7aa"}`,background:hasCio?"#f0fdf4":"#fff7ed",borderRadius:9,fontSize:10.5,color:hasCio?C.green:C.amber,fontWeight:700}}>{hasCio?"✓ Chief Innovation Officer seated — research capability online.":"! Research locked — hire a Chief Innovation Officer and assign them to an office seat."}</div>
+      <div style={{color:C.dim,fontSize:12.5,lineHeight:1.6}}>Capabilities unlock what the company is actually able to coordinate. Research is owned by a Chief Innovation Officer seated in a Research Center; Product, Strategy and Operations teams can support the work, but the program needs both the facility and its owner.</div>
+      <div style={{marginTop:10,padding:10,border:`1px solid ${hasCio?"#bbf7d0":"#fed7aa"}`,background:hasCio?"#f0fdf4":"#fff7ed",borderRadius:9,fontSize:10.5,color:hasCio?C.green:C.amber,fontWeight:700}}>{hasCio?"✓ Chief Innovation Officer seated in the Research Center — research capability online.":"! Research locked — build a Research Center, then seat a Chief Innovation Officer there."}</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8,marginTop:12}}>
         <Metric label="Development rate" value={`${rate.toFixed(1)} pts/day`} />
         <Metric label="Capabilities completed" value={`${world.player.research.completed.length}/${RESEARCH_NODES.length}`} />
@@ -29,7 +35,7 @@ export function ResearchView({ world, startResearch, startCategoryExpansion }: {
       {active ? <div style={{marginTop:12,padding:12,border:`1px solid ${C.cyan}`,borderRadius:10,background:"#effbff"}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}><b>{researchDef(active.nodeId).title}</b><span style={{color:C.cyan,fontWeight:800}}>{Math.round(active.progress/active.requiredPoints*100)}%</span></div>
         <div style={{height:7,background:C.grid,borderRadius:99,marginTop:8}}><div style={{width:`${Math.min(100,active.progress/active.requiredPoints*100)}%`,height:"100%",background:C.cyan,borderRadius:99}}/></div>
-        <div style={{color:rate>0?C.dim:C.amber,fontSize:10.5,marginTop:6}}>{rate>0?`${Math.ceil(Math.max(0,active.requiredPoints-active.progress)/rate)} days estimated · ${Math.round(active.progress)}/${active.requiredPoints} points`:`Paused — assign a Chief Innovation Officer to an office seat to resume.`}</div>
+        <div style={{color:rate>0?C.dim:C.amber,fontSize:10.5,marginTop:6}}>{rate>0?`${Math.ceil(Math.max(0,active.requiredPoints-active.progress)/rate)} days estimated · ${Math.round(active.progress)}/${active.requiredPoints} points`:`Paused — assign a Chief Innovation Officer to the Research Center to resume.`}</div>
       </div> : <div style={{color:C.faint,fontSize:11,marginTop:10}}>No capability project is active. Choose one below.</div>}
     </Panel>
 
@@ -38,8 +44,8 @@ export function ResearchView({ world, startResearch, startCategoryExpansion }: {
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:7}}>
         {[
           ["Corporate research", hasCio, "Seated Chief Innovation Officer"],
-          ["AA products", hasResearch(world,"advanced_product_development") && Math.max(0,...world.player.operatingRooms.filter(r=>r.kind==="office").map(r=>r.capacity))>=8, "Advanced Product Development + 8-seat office + Lead/Designer team"],
-          ["AAA products", hasResearch(world,"flagship_product_development") && Math.max(0,...world.player.operatingRooms.filter(r=>r.kind==="office").map(r=>r.capacity))>=16, "Flagship Product Development + 16-seat office + Lead + 3 Designers"],
+          ["AA products", hasResearch(world,"advanced_product_development") && aaWorkspaceReady, "Advanced Product Development + an 8-seat product-capable workspace + Lead/Designer team"],
+          ["AAA products", hasResearch(world,"flagship_product_development") && aaaInfrastructureReady, specializedCenter ? "Flagship Product Development + Research Center II + industry Design Center II + Lead + 3 Designers" : "Flagship Product Development + Research Center II + 16-seat product workspace + Lead + 3 Designers"],
           ["Owned manufacturing", hasResearch(world,"owned_manufacturing") && teamEffectiveness(world,"operations")>0, "Owned Manufacturing + seated Operations specialist + compatible Factory"],
           ["Specialized storage", hasResearch(world,"specialized_storage") && teamEffectiveness(world,"operations")>0, "Specialized Storage + Operations specialist + warehouse module"],
           ["Advanced market intelligence", hasResearch(world,"market_intelligence") && teamEffectiveness(world,"strategy")>0, "Market Intelligence + seated Strategy specialist"],

@@ -13,8 +13,8 @@ import { brandPositioningFit } from "./brands";
 import { categoryExpansionSpeed, companyScale } from "./growth";
 import { completeIndustryEntry, industryEntrySpeed, refreshCorporateCapabilities, syncPrimaryBusinessLegacy } from "./businesses";
 import { satisfactionTarget, updateCustomers, applyWordOfMouthSpillover, buildAdjacency } from "./customers";
-import { productManagerEffectiveness, teamEffectiveness, updatePeopleQuarter, updatePeopleYear, updateTalentSearch } from "./people";
-import { syncDerivedDepartments } from "./infrastructure";
+import { productManagerEffectiveness, teamEffectiveness, updatePeopleQuarter, updatePeopleYear, updateTalentSearch, updatePersonnelTraining } from "./people";
+import { facilityEffectMultiplier, roomFacilityType, roomSupportsProductDesign, syncDerivedDepartments } from "./infrastructure";
 import { recordChronicle, recordProductDesignComplete, updateChronicleTick } from "./chronicle";
 import { archetypeByKey } from "./productCatalog";
 import { simulateSecondaryIndustryMarket } from "./secondaryMarket";
@@ -54,6 +54,7 @@ export function step(w: World): World {
   w.tick += 1;
   expireIPContracts(w);
   updateTalentSearch(w);
+  updatePersonnelTraining(w);
 
   applyDriftAndShocks(w);
   runCompetitorBrains(w);
@@ -79,8 +80,8 @@ export function step(w: World): World {
     ? sum(activeDistribution.map(({ dist }) => dist.onlineCoverage)) / activeDistribution.length
     : 0;
   const marketingTeam = teamEffectiveness(w, "marketing");
-  const marketingPower = clamp((w.player.marketing - 20000) / 300000, 0, 1.2) * (hasMarketingTeam ? (0.78 + marketingTeam * 0.44) : 0);
-  const brandPower = clamp((w.player.brandMarketing) / 300000, 0, 1.2);
+  const marketingPower = clamp((w.player.marketing - 20000) / 300000, 0, 1.2) * (hasMarketingTeam ? (0.78 + marketingTeam * 0.44) : 0) * facilityEffectMultiplier(w, "marketing");
+  const brandPower = clamp((w.player.brandMarketing) / 300000, 0, 1.2) * facilityEffectMultiplier(w, "brand");
   const brandSignals = Object.fromEntries(w.brands.map((b) => [b.id, earnedSignals(w, b.id)]));
 
   const playerTargets = primarySkus.map((s) => skuEffectiveTarget(w, s));
@@ -171,11 +172,12 @@ export function step(w: World): World {
   // ---- design & manufacturing timers ----
   for (const p of w.player.skus) {
     if (p.status === "designing") {
+      const productIndustry = archetypeByKey(p.productKey)?.industryId;
       let pm = w.player.personnel.find(x => x.id === p.assignedPmId);
-      let pmRoom = w.player.operatingRooms.find(r => r.kind === "office" && r.team === "product" && r.assignedPersonnelIds.includes(p.assignedPmId ?? ""));
+      let pmRoom = w.player.operatingRooms.find(r => roomSupportsProductDesign(r, productIndustry) && r.assignedPersonnelIds.includes(p.assignedPmId ?? ""));
       if (!pm || !pmRoom) {
         const locked = new Set(w.player.skus.filter((s) => s !== p && s.status === "designing" && s.assignedPmId).map((s) => s.assignedPmId));
-        const productRooms = w.player.operatingRooms.filter((r) => r.kind === "office" && r.team === "product");
+        const productRooms = w.player.operatingRooms.filter((r) => roomSupportsProductDesign(r, productIndustry));
         const seated = new Set(productRooms.flatMap((r) => r.assignedPersonnelIds));
         const replacement = w.player.personnel.filter((x) => x.role === "product_manager" && seated.has(x.id) && !locked.has(x.id)).sort((a, b) => productManagerEffectiveness(b, p.productKey) - productManagerEffectiveness(a, p.productKey))[0];
         if (replacement) {
@@ -189,7 +191,9 @@ export function step(w: World): World {
           w.events.push({ tick: w.tick, kind: "people", text: `👤 ${replacement.name} took over ${p.name} development.` });
         }
       }
-      const designSpeed = pmRoom && pm ? 0.75 + productManagerEffectiveness(pm, p.productKey) * 0.75 : 0.25;
+      const centerType = pmRoom ? roomFacilityType(pmRoom) : "office";
+      const centerBonus = centerType === "beauty_center" || centerType === "toy_center" ? 1 + (pmRoom?.upgradeLevel ?? 1) * .10 : 1;
+      const designSpeed = pmRoom && pm ? (0.75 + productManagerEffectiveness(pm, p.productKey) * 0.75) * centerBonus : 0.25;
       p.designDaysLeft = Math.max(0, p.designDaysLeft - designSpeed);
       if (p.designDaysLeft <= 0) {
         p.status = "designed";
@@ -700,7 +704,7 @@ export function step(w: World): World {
   const shareYear = windowShare(TICKS_PER_YEAR);
 
   for (const st of w.studies) {
-    if (!st.done) { st.ticksLeft -= (0.70 + teamEffectiveness(w, "strategy") * 0.60); if (st.ticksLeft <= 0) { st.done = true; w.revealed[st.type] = { ...computeStudyFact(w, st.type), asOfTick: w.tick }; } }
+    if (!st.done) { st.ticksLeft -= (0.70 + teamEffectiveness(w, "strategy") * 0.60) * facilityEffectMultiplier(w, "insights"); if (st.ticksLeft <= 0) { st.done = true; w.revealed[st.type] = { ...computeStudyFact(w, st.type), asOfTick: w.tick }; } }
   }
 
   // ---- expertise: grows with cumulative sales per category ----

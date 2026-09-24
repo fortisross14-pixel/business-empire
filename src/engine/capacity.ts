@@ -2,7 +2,7 @@ import type { ProductProjectTier, SKU, World } from "./types";
 import { supplierById, supplierSupportsProduct } from "./suppliers";
 import { archetypeByKey, storageProfileForProduct, storageSpaceForProduct, STORAGE_PROFILES } from "./productCatalog";
 import { teamEffectiveness } from "./people";
-import { roleFitsRoom } from "./infrastructure";
+import { facilityEffectMultiplier, productCenterLevel, productCenterTypeForIndustry, researchCenterLevel, roleFitsRoom, roomSupportsProductDesign } from "./infrastructure";
 import { hasResearch } from "./research";
 
 const mapped = (w: World, kind: string) => w.player.operatingRooms.filter((r) => r.kind === kind);
@@ -47,7 +47,7 @@ export function factoryCapacity(w: World, productKey?: string): { onshore: numbe
 
 export function outsourcingCapacity(w: World): number {
   if (teamEffectiveness(w, "operations") <= 0) return 0;
-  const dedicated = mapped(w, "outsourcing").reduce((sum, r) => sum + r.capacity, 0);
+  const dedicated = mapped(w, "outsourcing").reduce((sum, r) => sum + r.capacity, 0) * facilityEffectMultiplier(w, "logistics");
   const founder = w.player.operatingRooms.find((r) => r.id === "founder-office");
   const starterSourcing = founder?.assignedPersonnelIds.some((id) => w.player.personnel.find((p) => p.id === id)?.role === "operations") ? 50_000 : 0;
   return dedicated + starterSourcing;
@@ -69,7 +69,8 @@ export function productionLeadDays(w: World, sku: Pick<SKU, "method" | "supplier
   const ops = teamEffectiveness(w, "operations");
   // Strong operations teams shorten planning/coordination lead time by up to ~18%.
   const peopleMult = 1 - ops * .18;
-  return Math.min(120, Math.max(3, Math.ceil((qty / cap) * 30 * leadMult * peopleMult)));
+  const logisticsMult = 1 / facilityEffectMultiplier(w, "logistics");
+  return Math.min(120, Math.max(3, Math.ceil((qty / cap) * 30 * leadMult * peopleMult * logisticsMult)));
 }
 
 export function inventoryUsed(w: World): number {
@@ -100,13 +101,20 @@ export function pmAssignments(w: World) {
 }
 
 
-export function productProjectTierAccess(w: World, tier: ProductProjectTier): { ok: boolean; reason: string } {
+export function productProjectTierAccess(w: World, tier: ProductProjectTier, productKey?: string): { ok: boolean; reason: string } {
   if (tier === "A") return { ok: true, reason: "" };
   if (tier === "AA" && !hasResearch(w, "advanced_product_development")) return { ok: false, reason: "Research Advanced Product Development to unlock AA programs." };
   if (tier === "AAA" && !hasResearch(w, "flagship_product_development")) return { ok: false, reason: "Research Flagship Product Development to unlock AAA programs." };
-  const maxOffice = Math.max(0, ...w.player.operatingRooms.filter((r) => r.kind === "office").map((r) => r.capacity));
-  if (tier === "AA" && maxOffice < 8) return { ok: false, reason: "AA projects require an 8-seat Normal Office or larger." };
-  if (tier === "AAA" && maxOffice < 16) return { ok: false, reason: "AAA projects require a 16-seat Large Office or larger." };
+  const archetype = productKey ? archetypeByKey(productKey) : null;
+  const designRooms = w.player.operatingRooms.filter((r) => roomSupportsProductDesign(r, archetype?.industryId));
+  const maxOffice = Math.max(0, ...designRooms.map((r) => r.capacity));
+  if (tier === "AA" && maxOffice < 8) return { ok: false, reason: "AA projects require an 8-seat product-capable office or design center." };
+  if (tier === "AAA") {
+    if (researchCenterLevel(w) < 2) return { ok: false, reason: "AAA projects require Research Center II." };
+    const centerType = productCenterTypeForIndustry(archetype?.industryId);
+    if (centerType && productCenterLevel(w, archetype?.industryId) < 2) return { ok: false, reason: `AAA ${archetype?.industryId === "toys" ? "toy" : "beauty"} products require a Level II specialized design center.` };
+    if (!centerType && maxOffice < 16) return { ok: false, reason: "AAA projects require a 16-seat product-capable office or specialized design center." };
+  }
   return { ok: true, reason: "" };
 }
 

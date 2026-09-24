@@ -3,7 +3,7 @@ import { computeProductRarity, DESIGN_DEPTHS, PRODUCT_PROJECT_TIERS } from "./ty
 import { INDUSTRIES, AXES, axisPos, clamp } from "./industries";
 import { buildCube } from "./cube";
 import { deriveUnitCost, deriveQuality } from "./economics";
-import { DEFAULT_SUPPLIER_ID, supplierById } from "./suppliers";
+import { supplierById } from "./suppliers";
 import { ensureBrandVisual } from "./brands";
 import { manufacturingStandard } from "./productDesign";
 import { presetSegments } from "./segments";
@@ -41,7 +41,7 @@ export function initWorld(industryId: string, company: string, brand: Brand | nu
       brandMarketing: 0, brandMarketingTarget: 0,
       backOffice: 0, backOfficeTarget: 0, cash: startCash, debt: 0, lostSales: 0, receivables: [],
       financeDept: 0, intelDept: 0,
-      personnel: [], formerPersonnel: [], talentMarket: [], talentMarketRefreshTick: 0, talentSearch: null,
+      personnel: [], formerPersonnel: [], talentMarket: [], talentMarketRefreshTick: 0, talentSearch: null, trainingPrograms: [],
       expertise: { industry: {}, category: {} },
       vision: null,
       operatingRooms: [],
@@ -109,8 +109,10 @@ export function buildSku(w: World, spec: ProductSpec, id: string, tick = 0, expe
   const cfg = INDUSTRIES[archetype?.industryId ?? w.industryId] ?? w.cfg;
   const pt = cfg.products.find((p) => p.key === spec.productKey)!;
   const mfg = manufacturingStandard(spec.manufacturingStars);
-  const supplierId = spec.method === "outsource" ? (spec.supplierId ?? DEFAULT_SUPPLIER_ID) : null;
-  const supplier = spec.method === "outsource" ? supplierById(supplierId) : null;
+  // Design does not commit manufacturing. Keep supplier null until the player chooses a
+  // compatible partner in the manufacturing stage; this also prevents cross-industry defaults.
+  const supplierId = spec.method === "outsource" ? (spec.supplierId ?? null) : null;
+  const supplier = spec.method === "outsource" && supplierId ? supplierById(supplierId) : null;
   const unitCost = deriveUnitCost(pt, spec.method, mfg.materialQuality, mfg.productionQuality, supplier?.costMult ?? 1, w.materialPriceIndex);
   const quality = deriveQuality(mfg.materialQuality, mfg.productionQuality, supplier?.qualityAdj ?? 0);
   const projectTier = spec.projectTier ?? (spec.designDepth === "breakthrough" ? "AAA" : spec.designDepth === "advanced" ? "AA" : "A");

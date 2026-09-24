@@ -9,11 +9,12 @@ import { openSeatCountForRole, roleFitsRoom } from "../../engine/infrastructure"
 const ROLES: PersonnelRole[] = ["product_manager", "marketing", "operations", "finance", "strategy", "innovation"];
 const MODES: TalentSearchMode[] = ["quick", "online", "deep"];
 
-export function PersonnelView({ world, hireCandidate, startRecruitingSearch, promotePersonnel, firePersonnel }: {
+export function PersonnelView({ world, hireCandidate, startRecruitingSearch, promotePersonnel, trainPersonnel, firePersonnel }: {
   world: World;
   hireCandidate: (candidateId: string, roomId: string) => { ok: boolean; reason?: string };
   startRecruitingSearch: (role: PersonnelRole, industryId: string, mode: TalentSearchMode) => { ok: boolean; reason?: string };
   promotePersonnel: (id: string) => void;
+  trainPersonnel: (id: string) => { ok: boolean; reason?: string; days?: number };
   firePersonnel: (id: string) => void;
 }) {
   const staff = world.player.personnel;
@@ -26,6 +27,7 @@ export function PersonnelView({ world, hireCandidate, startRecruitingSearch, pro
   const [contractCandidateId, setContractCandidateId] = useState<string | null>(null);
   const [contractRoomId, setContractRoomId] = useState<string>("");
   const [contractMessage, setContractMessage] = useState<string | null>(null);
+  const [trainingMessage, setTrainingMessage] = useState<string | null>(null);
   const search = world.player.talentSearch;
   const slate = world.player.talentMarket ?? [];
   const seatedIds = new Set(world.player.operatingRooms.flatMap((r) => r.assignedPersonnelIds));
@@ -72,7 +74,18 @@ export function PersonnelView({ world, hireCandidate, startRecruitingSearch, pro
 
     {tab === "employees" && <section style={panelStyle}>
       <div style={eyebrow}>YOUR TEAM</div><h2 style={h2}>Employees</h2><p style={copy}>Review your permanent team here. Office assignment happens from the campus building itself, so staffing has one clear home.</p>
-      {staff.length === 0 ? <div style={{ color: C.faint, fontSize: 12, marginTop: 12 }}>No employees yet. The founder does not consume a staff slot. Go to Hiring to brief a recruiting agency.</div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 9, marginTop: 12 }}>{staff.map((p) => { const room = world.player.operatingRooms.find((r) => r.assignedPersonnelIds.includes(p.id)); return <div key={p.id} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 11, padding: 12 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div><b>{p.name}</b><div style={{ color: C.violet, fontSize: 10.5 }}>{p.title}</div></div><div style={{ color: C.faint, fontSize: 9.5, textAlign: "right" }}>{fmtMoney(p.salary)}/mo<br/>Age {p.age}</div></div><div style={{ color: C.dim, fontSize: 10.5, marginTop: 7 }}>{specialtyLabel(p.specialty)} · {room?.name ?? <span style={{ color: C.amber }}>Unassigned</span>}</div><div style={{ display: "flex", gap: 5, marginTop: 9 }}><button style={{ ...ctrlBtn, flex: 1 }} onClick={() => promotePersonnel(p.id)}>Promote</button><button style={{ ...ctrlBtn, color: C.red }} onClick={() => firePersonnel(p.id)}>Release</button></div>{!seatedIds.has(p.id) && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 6 }}>Assign this person to an office from the campus.</div>}</div>; })}</div>}
+      {trainingMessage && <div style={{ color: trainingMessage.startsWith("✓") ? C.green : C.amber, fontSize: 10.5, marginTop: 9 }}>{trainingMessage}</div>}
+      {staff.length === 0 ? <div style={{ color: C.faint, fontSize: 12, marginTop: 12 }}>No employees yet. The founder does not consume a staff slot. Go to Hiring to brief a recruiting agency.</div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 9, marginTop: 12 }}>{staff.map((p) => {
+        const room = world.player.operatingRooms.find((r) => r.assignedPersonnelIds.includes(p.id));
+        const training = (world.player.trainingPrograms ?? []).find((t) => t.personnelId === p.id);
+        const hasTrainingRoom = world.player.operatingRooms.some((r) => r.facilityType === "training_center");
+        return <div key={p.id} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 11, padding: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><div><b>{p.name}</b><div style={{ color: C.violet, fontSize: 10.5 }}>{p.title}</div></div><div style={{ color: C.faint, fontSize: 9.5, textAlign: "right" }}>{fmtMoney(p.salary)}/mo<br/>Age {p.age}</div></div>
+          <div style={{ color: C.dim, fontSize: 10.5, marginTop: 7 }}>{specialtyLabel(p.specialty)} · {room?.name ?? <span style={{ color: C.amber }}>Unassigned</span>}</div>
+          {training && <div style={{ marginTop: 8, padding: 8, borderRadius: 8, border: `1px solid ${C.line}`, background: "white" }}><div style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:10.5 }}><b>🎓 Upskilling</b><span>{Math.ceil(training.daysLeft)}d</span></div><div style={{ height:5, background:C.grid, borderRadius:99, marginTop:6 }}><div style={{ width:`${Math.max(3,(1-training.daysLeft/training.totalDays)*100)}%`, height:"100%", background:C.violet, borderRadius:99 }}/></div></div>}
+          <div style={{ display: "flex", gap: 5, marginTop: 9, flexWrap:"wrap" }}><button style={{ ...ctrlBtn, flex: 1 }} onClick={() => promotePersonnel(p.id)}>Promote</button><button disabled={Boolean(training) || !hasTrainingRoom} title={!hasTrainingRoom ? "Build a Training Room first." : training ? "This employee is already training." : undefined} style={{ ...ctrlBtn, flex: 1, color:C.violet, opacity: training || !hasTrainingRoom ? .45 : 1 }} onClick={() => { const result=trainPersonnel(p.id); setTrainingMessage(result.ok ? `✓ ${p.name} started training${result.days ? ` · ${result.days} days` : ""}.` : result.reason ?? "Could not start training."); }}>Train</button><button style={{ ...ctrlBtn, color: C.red }} onClick={() => firePersonnel(p.id)}>Release</button></div>
+          {!seatedIds.has(p.id) && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 6 }}>Assign this person to an office from the campus.</div>}
+        </div>; })}</div>}
     </section>}
 
     {contractCandidateId && (() => {

@@ -2,7 +2,7 @@ import type { IndustryConfig, Personnel, PersonnelAttributes, PersonnelRole, Pro
 import { BASE_SALARIES } from "./types";
 import { recordPeopleEvent } from "./chronicle";
 import { INDUSTRIES } from "./industries";
-import { openSeatCountForRole } from "./infrastructure";
+import { facilityEffectMultiplier, facilityRooms, openSeatCountForRole, trainingCapacity } from "./infrastructure";
 
 const FIRST_NAMES = [
   "Sarah","Maya","Elena","Priya","Sofia","Nina","Aisha","Hannah","Lucia","Camila","Mei","Grace","Zoe","Amara","Julia","Leila",
@@ -78,7 +78,7 @@ export function teamEffectiveness(w: World, role: PersonnelRole): number {
   if (!seated.length) return 0;
   const weighted = seated.reduce((sum, p) => sum + roleEffectiveness(p), 0) / seated.length;
   const depthBonus = Math.min(.14, Math.log2(seated.length + 1) * .055);
-  return clamp(weighted + depthBonus);
+  return clamp((weighted + depthBonus) * facilityEffectMultiplier(w, "leadership"));
 }
 
 export function productManagerEffectiveness(p: Personnel, productKey: string): number {
@@ -314,6 +314,58 @@ export function updatePeopleYear(w: World) {
 }
 
 
+
+export function startPersonnelTraining(w: World, personnelId: string): { ok: boolean; reason?: string; days?: number } {
+  const person = w.player.personnel.find((p) => p.id === personnelId);
+  if (!person) return { ok: false, reason: "Employee not found." };
+  const capacity = trainingCapacity(w);
+  if (capacity <= 0) return { ok: false, reason: "Build a Training Room before starting an upskilling program." };
+  w.player.trainingPrograms = w.player.trainingPrograms ?? [];
+  if (w.player.trainingPrograms.some((t) => t.personnelId === personnelId)) return { ok: false, reason: `${person.name} is already in training.` };
+  const active = w.player.trainingPrograms.length;
+  if (active >= capacity) return { ok: false, reason: `All ${capacity} training slot${capacity === 1 ? " is" : "s are"} occupied.` };
+  const last = (person as Personnel & { lastTrainingTick?: number }).lastTrainingTick ?? -9999;
+  if (w.tick - last < 180) return { ok: false, reason: `${person.name} can start another formal course in ${Math.ceil((180 - (w.tick - last)) / 30)} month(s).` };
+  const rooms = facilityRooms(w, "training_center");
+  const room = rooms.find((candidate) => (w.player.trainingPrograms ?? []).filter((program) => program.facilityRoomId === candidate.id).length < candidate.capacity);
+  if (!room) return { ok: false, reason: "All Training Rooms are currently full." };
+  const advanced = (room.upgradeLevel ?? 1) >= 2;
+  const days = advanced ? 30 : 45;
+  const cost = advanced ? 22_000 : 18_000;
+  if (w.player.cash < cost) return { ok: false, reason: `Need $${cost.toLocaleString()} for this training program.` };
+  w.player.cash -= cost;
+  w.player.trainingPrograms.push({ id: `training_${w.tick}_${personnelId}`, personnelId, facilityRoomId: room.id, startedTick: w.tick, daysLeft: days, totalDays: days, cost });
+  w.events.push({ tick: w.tick, kind: "people", text: `🎓 ${person.name} started a ${days}-day upskilling program.` });
+  return { ok: true, days };
+}
+
+export function updatePersonnelTraining(w: World) {
+  w.player.trainingPrograms = w.player.trainingPrograms ?? [];
+  const completed: string[] = [];
+  for (const program of w.player.trainingPrograms) {
+    program.daysLeft = Math.max(0, program.daysLeft - 1);
+    if (program.daysLeft > 0) continue;
+    const p = w.player.personnel.find((person) => person.id === program.personnelId);
+    if (p) {
+      const boost = .045;
+      const attrs = p.attributes;
+      if (p.role === "product_manager") { attrs.creativity = clamp(attrs.creativity + boost); attrs.expertise = clamp(attrs.expertise + boost * .8); attrs.execution = clamp(attrs.execution + boost * .5); }
+      if (p.role === "marketing") { attrs.creativity = clamp(attrs.creativity + boost); attrs.commercial = clamp(attrs.commercial + boost); }
+      if (p.role === "finance") { attrs.expertise = clamp(attrs.expertise + boost); attrs.execution = clamp(attrs.execution + boost); }
+      if (p.role === "strategy") { attrs.expertise = clamp(attrs.expertise + boost); attrs.commercial = clamp(attrs.commercial + boost * .8); attrs.leadership = clamp(attrs.leadership + boost * .5); }
+      if (p.role === "operations") { attrs.execution = clamp(attrs.execution + boost); attrs.leadership = clamp(attrs.leadership + boost * .8); }
+      if (p.role === "innovation") { attrs.expertise = clamp(attrs.expertise + boost); attrs.creativity = clamp(attrs.creativity + boost); attrs.leadership = clamp(attrs.leadership + boost * .5); }
+      p.skill = clamp(Math.min(Math.max(p.potential, p.skill), p.skill + .025));
+      (p as Personnel & { lastTrainingTick?: number }).lastTrainingTick = w.tick;
+      p.morale = clamp((p.morale ?? .7) + .05);
+      p.careerEvents.push({ tick: w.tick, kind: "milestone", text: "Completed an employee upskilling program." });
+      w.events.push({ tick: w.tick, kind: "people", text: `🎓 ${p.name} completed training and improved core skills.` });
+    }
+    completed.push(program.id);
+  }
+  if (completed.length) w.player.trainingPrograms = w.player.trainingPrograms.filter((program) => !completed.includes(program.id));
+}
+
 export const TALENT_SEARCH_MODES: Record<TalentSearchMode, { label: string; days: number; cost: number; candidates: number; qualityBias: number; blurb: string }> = {
   quick: { label: "Quick available search", days: 2, cost: 5_000, candidates: 3, qualityBias: -.08, blurb: "Who can interview immediately? Fast and cheap, but the slate is usually ordinary." },
   online: { label: "Search online", days: 7, cost: 18_000, candidates: 4, qualityBias: .025, blurb: "A normal market search with a broader pool and better odds of a strong fit." },
@@ -340,7 +392,7 @@ function awaitIndustry(industryId: string): IndustryConfig | null { return INDUS
 export function updateTalentSearch(w: World) {
   const search = w.player.talentSearch;
   if (!search) return;
-  search.daysLeft = Math.max(0, search.daysLeft - 1);
+  search.daysLeft = Math.max(0, search.daysLeft - facilityEffectMultiplier(w, "recruiting"));
   if (search.daysLeft > 0) return;
   const cfg = INDUSTRIES[search.industryId] ?? w.cfg;
   const def = TALENT_SEARCH_MODES[search.mode];

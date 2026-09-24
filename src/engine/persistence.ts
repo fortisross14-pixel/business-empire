@@ -2,7 +2,7 @@ import { INDUSTRIES } from "./industries";
 import type { World } from "./types";
 import { officeStageForLevel, sanitizeOperatingRooms, syncDerivedDepartments } from "./infrastructure";
 import { qualityToStars } from "./productDesign";
-import { DEFAULT_SUPPLIER_ID } from "./suppliers";
+import { supplierById, supplierSupportsProduct } from "./suppliers";
 import { deriveSkuChannels } from "./distribution";
 import { enrichLegacyPerson } from "./people";
 import { ensureChronicle, migrateChronicleFromLegacy } from "./chronicle";
@@ -15,11 +15,11 @@ import { ensureIPFoundation } from "./ip";
 import { TICKS_PER_YEAR } from "./types";
 import { ensureBrandVisual } from "./brands";
 
-export const SAVE_SCHEMA_VERSION = 17;
+export const SAVE_SCHEMA_VERSION = 18;
 export const AUTOSAVE_KEY = "market-sim:autosave";
 
 interface SaveEnvelopeV10 {
-  version: 17;
+  version: 18;
   savedAt: number;
   world: World;
 }
@@ -67,7 +67,9 @@ function migrateWorld(rawWorld: unknown, version: number): World | null {
   // derived from concrete partner assignments instead of being independently editable.
   if (version <= 2) {
     for (const sku of world.player.skus ?? []) {
-      sku.supplierId = sku.method === "outsource" ? (sku.supplierId ?? DEFAULT_SUPPLIER_ID) : null;
+      // Manufacturer selection is now a post-design decision. Legacy saves with no
+      // explicit supplier stay unassigned instead of inheriting a skincare-only default.
+      sku.supplierId = sku.method === "outsource" ? (sku.supplierId ?? null) : null;
       sku.unitsLostTotal = sku.unitsLostTotal ?? 0;
       // Old saves stored only channel types. Preserve their routes to market by mapping
       // those channels onto any already-signed concrete partners before channels become derived.
@@ -130,6 +132,15 @@ function migrateWorld(rawWorld: unknown, version: number): World | null {
     world.brandEquity[brand.id] = world.brandEquity[brand.id] ?? {};
   }
   for (const sku of world.player.skus ?? []) { sku.brandId = sku.brandId ?? world.primaryBrandId; sku.industryId = sku.industryId ?? world.industryId; }
+  // Defensive compatibility cleanup for every save version: older builds could silently
+  // attach the skincare default supplier to toy SKUs. Leave those products unassigned so
+  // the player can choose a compatible manufacturer in the Manufacture stage.
+  for (const sku of world.player.skus ?? []) {
+    if (sku.method !== "outsource") { sku.supplierId = null; continue; }
+    if (!sku.supplierId) continue;
+    const supplier = supplierById(sku.supplierId);
+    if (!supplierSupportsProduct(supplier, sku.productKey)) sku.supplierId = null;
+  }
 
   if (!world.player.unlockedCategories?.length) {
     const legacyAccess = world.cfg.id === "skincare"
@@ -138,6 +149,7 @@ function migrateWorld(rawWorld: unknown, version: number): World | null {
     world.player.unlockedCategories = Array.from(new Set([...legacyAccess, ...(world.player.skus ?? []).map((s) => s.productKey)]));
   }
   world.player.categoryExpansionProjects = world.player.categoryExpansionProjects ?? [];
+  world.player.trainingPrograms = world.player.trainingPrograms ?? [];
 
   // v6 -> v7: multi-industry foundation. The existing industry becomes the first
   // active business; category state is wrapped per industry while legacy aliases remain
@@ -309,6 +321,13 @@ function migrateWorld(rawWorld: unknown, version: number): World | null {
       r.kind === "warehouse" && (r.storageProfiles ?? ["standard"]).some((p) => p !== "standard"),
     );
     if (hasSpecialStorage) grant("specialized_storage");
+  }
+
+  // v17 -> v18: campus specialization and employee training. Existing rooms keep their legacy behavior
+  // and receive a facilityType lazily; new saves can build dedicated design, research and people facilities.
+  if (version <= 17) {
+    world.player.trainingPrograms = world.player.trainingPrograms ?? [];
+    for (const room of world.player.operatingRooms ?? []) room.facilityType = room.facilityType ?? (room.kind as any);
   }
 
   // Keep product-lead lineage even after transfers, departures and save migrations.

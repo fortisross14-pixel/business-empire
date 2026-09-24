@@ -86,8 +86,8 @@ export function ProductsView({ world, produce, setProductPrice, setProductQualit
             <div style={{ minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sku.name}</div><div style={{ color: C.faint, fontSize: 10, marginTop: 2 }}>{archetypeByKey(sku.productKey)?.label ?? sku.productKey} · V{sku.version ?? 1}</div></div>
             <span style={{ flex: "0 0 auto", color: meta.color, background: `${meta.color}16`, border: `1px solid ${meta.color}45`, borderRadius: 999, padding: "4px 7px", fontSize: 8.5, fontWeight: 900, letterSpacing: .55 }}>{meta.label}</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "92px 1fr", gap: 12, alignItems: "center", marginTop: 11 }}>
-            <div style={{ display: "grid", placeItems: "center", padding: 7, borderRadius: UI.radius.md, background: "#eef3f6", border: `1px solid ${C.grid}` }}><ProductVisualCard world={world} sku={sku} size={78} showLabels={false} /></div>
+          <div style={{ display: "grid", gridTemplateColumns: "132px minmax(0,1fr)", gap: 12, alignItems: "center", marginTop: 11 }}>
+            <div style={{ display: "grid", placeItems: "center", padding: 7, borderRadius: UI.radius.md, background: "#eef3f6", border: `1px solid ${C.grid}` }}><ProductVisualCard world={world} sku={sku} size={116} showLabels={false} /></div>
             <div style={{ minWidth: 0 }}>
               <div style={{ color: C.dim, fontSize: 10.5, lineHeight: 1.45 }}>{meta.blurb}</div>
               {stage === "analyze" && <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 7, marginTop: 10, fontSize: 9.5 }}><span><b>{((r?.units ?? 0)/90).toFixed((r?.units ?? 0)/90 < 10 ? 1 : 0)}</b><small style={{ display: "block", color: C.faint, marginTop: 2 }}>units/day</small></span><span><b>{fmtMoney(r?.revenue ?? 0)}</b><small style={{ display: "block", color: C.faint, marginTop: 2 }}>revenue/Q</small></span><span style={{ color: (r?.margin ?? 0) >= 0 ? C.green : C.red }}><b>{fmtMoney(r?.margin ?? 0)}</b><small style={{ display: "block", color: C.faint, marginTop: 2 }}>contribution/Q</small></span></div>}
@@ -128,7 +128,7 @@ function ProductDetailModal({ world, sku, si, onClose, produce, setProductPrice,
   return <div style={{ position: "fixed", inset: 0, zIndex: 95, background: "rgba(4,17,30,.56)", display: "grid", placeItems: "center", padding: 18 }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
     <div style={{ width: "min(820px,96vw)", maxHeight: "90vh", overflow: "auto", background: "white", borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 24px 70px rgba(0,0,0,.28)" }}>
       <div style={{ position: "sticky", top: 0, zIndex: 2, background: "rgba(255,255,255,.96)", backdropFilter: "blur(10px)", borderBottom: `1px solid ${C.line}`, padding: "13px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}><ProductVisualCard world={world} sku={sku} size={64} showLabels={false} /><div><div style={{ fontWeight: 900, fontSize: 17 }}>{sku.name} <span style={{ color: C.faint, fontSize: 10 }}>v{sku.version ?? 1}</span></div><div style={{ color: meta.color, fontSize: 10.5, fontWeight: 900, marginTop: 3 }}>{meta.icon} {meta.label}</div></div></div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}><ProductVisualCard world={world} sku={sku} size={72} showLabels={false} /><div><div style={{ fontWeight: 900, fontSize: 17 }}>{sku.name} <span style={{ color: C.faint, fontSize: 10 }}>v{sku.version ?? 1}</span></div><div style={{ color: meta.color, fontSize: 10.5, fontWeight: 900, marginTop: 3 }}>{meta.icon} {meta.label}</div></div></div>
         <button style={ctrlBtn} onClick={onClose}>✕</button>
       </div>
       <div style={{ padding: 16 }}>

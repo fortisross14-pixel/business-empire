@@ -525,6 +525,7 @@ export interface Expertise {
 export interface CampusPathTile { x: number; y: number; }
 
 export type OperatingRoomKind = "office" | "factory" | "warehouse" | "outsourcing";
+export type FacilityTypeId = "office" | "beauty_center" | "toy_center" | "research_center" | "training_center" | "brand_studio" | "hr_office" | "marketing_office" | "logistics_office" | "consumer_insights" | "warehouse" | "cold_storage" | "distribution_hub" | "factory" | "outsourcing" | "executive_wing";
 export type OperatingTeamKind = "unassigned" | "product" | "marketing" | "finance" | "sales" | "operations" | "strategy" | "innovation";
 export interface OperatingRoom {
   id: string;
@@ -538,7 +539,8 @@ export interface OperatingRoom {
   buildCost: number;
   monthlyCost: number;
   capacity: number; // factory units/month; warehouse standard-space units; office seats; outsourcing supplier capacity
-  upgradeLevel?: number; // office: 1=4, 2=8, 3=16, 4=32; levels 5+ add +8 seats/floor. Other facilities remain capped upgrades.
+  upgradeLevel?: number; // facility-specific level; Founder Office uses I–IV.
+  facilityType?: FacilityTypeId; // visual/gameplay specialization while kind keeps legacy capacity semantics.
   manufacturingFamilies?: string[]; // factories only; Product Engine line compatibility
   storageProfiles?: string[]; // warehouses only; foundation for cold/secure storage modules
 }
@@ -600,6 +602,16 @@ export interface ResearchState {
   lifetimePoints: number;
 }
 
+export interface TrainingProgram {
+  id: string;
+  personnelId: string;
+  facilityRoomId: string;
+  startedTick: number;
+  daysLeft: number;
+  totalDays: number;
+  cost: number;
+}
+
 export interface PlayerState {
   skus: SKU[];
   contracts: Contract[];
@@ -622,6 +634,7 @@ export interface PlayerState {
   talentMarket: TalentCandidate[];
   talentMarketRefreshTick: number;
   talentSearch?: TalentSearch | null;
+  trainingPrograms: TrainingProgram[];
   expertise: Expertise;
   vision: Vision | null;
   operatingRooms: OperatingRoom[];

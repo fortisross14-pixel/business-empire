@@ -6,13 +6,13 @@ import type { ProductSpec } from "../../engine/world";
 import { segmentStats, segmentTargetProfile } from "../../engine/segments";
 import type { World, ProductProjectTier, ProductTestingLevel, SKU } from "../../engine/types";
 import { PRODUCT_PROJECT_TIERS } from "../../engine/types";
-import { DEFAULT_SUPPLIER_ID } from "../../engine/suppliers";
 import { archetypeByKey, storageProfileForProduct, STORAGE_PROFILES } from "../../engine/productCatalog";
 import { TESTING_LEVELS, testingRequired } from "../../engine/productDynamics";
 import { canNegotiatePartner, partnerSupportsIndustry } from "../../engine/distribution";
 import { isProductLead, productManagerEffectiveness } from "../../engine/people";
 import { productProjectLockedPeople, productProjectTierAccess, warehouseUnitCapacity } from "../../engine/capacity";
 import { brandById } from "../../engine/brands";
+import { roomSupportsProductDesign } from "../../engine/infrastructure";
 import { ipProductFit, usableIPsForProduct } from "../../engine/ip";
 import {
   PRODUCT_POSITIONINGS, positioningDef, manufacturingStandard,
@@ -32,7 +32,7 @@ function fitPriorityBudget(input: Record<string, number>, budget: number): Recor
   return out;
 }
 
-export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: World; baseSku?: SKU | null; onCreate: (s: ProductSpec) => void; onClose: () => void }) {
+export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: World; baseSku?: SKU | null; onCreate: (s: ProductSpec) => { ok: boolean; reason?: string }; onClose: () => void }) {
   const activeBrands = world.brands.filter((b) => world.player.businesses?.[b.industryId]?.status === "active");
   const initialBrand = (baseSku ? world.brands.find((b) => b.id === baseSku.brandId) : null) ?? activeBrands.find((b) => b.id === world.primaryBrandId) ?? activeBrands[0] ?? world.brands[0];
   const initialCfg = INDUSTRIES[initialBrand.industryId] ?? world.cfg;
@@ -44,6 +44,7 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
   const initialSegment = world.savedSegments.find((s) => s.name === baseTargetName)?.id ?? "broad";
 
   const [step, setStep] = useState<1 | 2>(1);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [brandId, setBrandId] = useState(initialBrand.id);
   const [productKey, setProductKey] = useState(initialProductKey);
   const [name, setName] = useState(baseSku ? `${baseSku.name.replace(/ v\d+$/i, "")} v${(baseSku.version ?? 1) + 1}` : "");
@@ -80,7 +81,7 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
   const developmentDays = Math.ceil(tierDef.baseDays * testDef.timeMult);
   const priorityUsed = Object.values(priorityStars).reduce((sum, v) => sum + v, 0);
 
-  const productRooms = world.player.operatingRooms.filter((r) => r.kind === "office" && (r.team === "product" || r.id === "founder-office"));
+  const productRooms = world.player.operatingRooms.filter((r) => roomSupportsProductDesign(r, archetype?.industryId));
   const seatedPmIds = new Set(productRooms.flatMap((r) => r.assignedPersonnelIds));
   const lockedPmIds = productProjectLockedPeople(world);
   if (baseSku?.assignedPmId) lockedPmIds.delete(baseSku.assignedPmId);
@@ -90,7 +91,7 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
   const selectedPm = leadPool.find((person) => person.id === leadPmId) ?? [...leadPool].sort((a, b) => productManagerEffectiveness(b, productKey) - productManagerEffectiveness(a, productKey))[0];
   const requiredDesigners = projectTier === "AAA" ? 3 : projectTier === "AA" ? 1 : 0;
   const validDesignerIds = designerIds.filter((id, i, arr) => id !== selectedPm?.id && arr.indexOf(id) === i && availablePms.some((p) => p.id === id)).slice(0, requiredDesigners);
-  const tierAccess = productProjectTierAccess(world, projectTier);
+  const tierAccess = productProjectTierAccess(world, projectTier, productKey);
   const selectedSegment = targetSegmentId === "broad" ? null : world.savedSegments.find((seg) => seg.id === targetSegmentId) ?? null;
   const marketWorld = selectedBrand.industryId === world.industryId ? world : { ...world, cfg };
   const target = selectedSegment ? segmentTargetProfile(marketWorld as World, selectedSegment.filter) : { gender: .5, age: .5, class: .5, leaning: .5, geography: .5, family: .5 };
@@ -161,7 +162,7 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
         <div>
           <FieldLabel>Project class</FieldLabel>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 7, marginBottom: 10 }}>{(["A","AA","AAA"] as ProductProjectTier[]).map((tier) => {
-            const def = PRODUCT_PROJECT_TIERS[tier]; const access = productProjectTierAccess(world, tier); const active = projectTier === tier;
+            const def = PRODUCT_PROJECT_TIERS[tier]; const access = productProjectTierAccess(world, tier, productKey); const active = projectTier === tier;
             return <button key={tier} disabled={!access.ok} title={!access.ok ? access.reason : undefined} onClick={() => { setProjectTier(tier); setDesignerIds([]); setLeadPmId(""); setPriorityStars((cur) => fitPriorityBudget(cur, def.priorityPoints)); }} style={{ ...ctrlBtn, minHeight: 74, textAlign: "left", borderColor: active ? C.violet : C.line, color: active ? C.violet : C.ink, opacity: access.ok ? 1 : .45 }}><div style={{ fontWeight: 900, fontSize: 16 }}>{tier}</div><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{tier === "A" ? "1 Designer" : tier === "AA" ? "Lead + 1 Designer" : "Lead + 3 Designers"}</div><div style={{ color: C.faint, fontSize: 9.5 }}>~{def.baseDays} base days</div></button>;
           })}</div>
           {!tierAccess.ok && <DisabledReason>{tierAccess.reason}</DisabledReason>}
@@ -185,12 +186,16 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
           <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: C.panel2, border: `1px solid ${C.line}`, fontSize: 11.5 }}><b>{projectTier} product project</b> · ~{developmentDays} days · {projectTier === "A" ? "1-person team" : projectTier === "AA" ? "2-person team" : "4-person team"}<br /><span style={{ color: C.faint }}>Audience: {targetLabel}</span></div>
         </div>
       </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}><button style={ctrlBtn} onClick={() => setStep(1)}>← Back</button><div style={{ display: "grid", justifyItems: "end" }}><button disabled={!canStart} title={!canStart ? "You need an available Product Designer seated in a product-capable office." : undefined} style={{ ...bigBtn, opacity: canStart ? 1 : .45 }} onClick={() => onCreate({
-        name: name.trim(), productKey, brandId, method: "outsource", supplierId: DEFAULT_SUPPLIER_ID, manufacturingStars: 3,
-        listPrice: suggestedPrice(pt.priceBand, .5), target, targetLabel, positioning, attributes, packaging, projectTier,
-        designDepth: projectTier === "AAA" ? "breakthrough" : projectTier === "AA" ? "advanced" : "standard",
-        pmId: selectedPm?.id, designerIds: validDesignerIds, testingLevel, designFacets, ipId, version: baseSku ? (baseSku.version ?? 1) + 1 : 1, parentSkuId: baseSku?.id ?? null,
-      })}>Start {projectTier} design · ~{developmentDays} days</button>{!canStart && <DisabledReason>{!tierAccess.ok ? tierAccess.reason : !selectedPm ? (projectTier === "A" ? "Assign an available Product Designer." : "Assign an eligible Product Lead.") : validDesignerIds.length !== requiredDesigners ? `Assign ${requiredDesigners} additional Product Designer${requiredDesigners === 1 ? "" : "s"}.` : "The project team or priority-point allocation is incomplete."}</DisabledReason>}</div></div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}><button style={ctrlBtn} onClick={() => { setCreateError(null); setStep(1); }}>← Back</button><div style={{ display: "grid", justifyItems: "end" }}><button disabled={!canStart} title={!canStart ? "You need an available Product Designer seated in a product-capable office." : undefined} style={{ ...bigBtn, opacity: canStart ? 1 : .45 }} onClick={() => {
+        setCreateError(null);
+        const result = onCreate({
+          name: name.trim(), productKey, brandId, method: "outsource", supplierId: null, manufacturingStars: 3,
+          listPrice: suggestedPrice(pt.priceBand, .5), target, targetLabel, positioning, attributes, packaging, projectTier,
+          designDepth: projectTier === "AAA" ? "breakthrough" : projectTier === "AA" ? "advanced" : "standard",
+          pmId: selectedPm?.id, designerIds: validDesignerIds, testingLevel, designFacets, ipId, version: baseSku ? (baseSku.version ?? 1) + 1 : 1, parentSkuId: baseSku?.id ?? null,
+        });
+        if (!result.ok) setCreateError(result.reason ?? "The design could not be started.");
+      }}>Start {projectTier} design · ~{developmentDays} days</button>{!canStart && <DisabledReason>{!tierAccess.ok ? tierAccess.reason : !selectedPm ? (projectTier === "A" ? "Assign an available Product Designer." : "Assign an eligible Product Lead.") : validDesignerIds.length !== requiredDesigners ? `Assign ${requiredDesigners} additional Product Designer${requiredDesigners === 1 ? "" : "s"}.` : "The project team or priority-point allocation is incomplete."}</DisabledReason>}{createError && <DisabledReason>{createError}</DisabledReason>}</div></div>
     </div>}
   </Modal>;
 }

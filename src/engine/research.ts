@@ -29,22 +29,27 @@ export const RESEARCH_NODES: ResearchNodeDef[] = [
 export function researchDef(id: ResearchNodeId) { return RESEARCH_NODES.find(n => n.id === id)!; }
 export function hasResearch(w: World, id: ResearchNodeId): boolean { return (w.player.research?.completed ?? []).includes(id); }
 export function hasSeatedCIO(w: World): boolean {
-  return teamEffectiveness(w, "innovation") > 0;
+  const researchRooms = w.player.operatingRooms.filter((r) => r.facilityType === "research_center");
+  const researchSeats = new Set(researchRooms.flatMap((r) => r.assignedPersonnelIds));
+  return w.player.personnel.some((p) => p.role === "innovation" && researchSeats.has(p.id));
 }
 export function researchRate(w: World): number {
   // Corporate research is an organizational capability, not a free founder timer.
-  // A seated CIO owns the program; Product/Strategy/Operations only support it.
+  // The Research Center is the physical home of the program; a seated CIO owns it.
+  if (!hasSeatedCIO(w)) return 0;
   const cio = teamEffectiveness(w, "innovation");
-  if (cio <= 0) return 0;
   const strategy = teamEffectiveness(w, "strategy") * .55;
   const product = teamEffectiveness(w, "product_manager") * .45;
   const operations = teamEffectiveness(w, "operations") * .35;
-  return cio * 2.65 + strategy + product + operations;
+  const centerLevel = Math.max(0, ...w.player.operatingRooms.filter((r) => r.facilityType === "research_center").map((r) => r.upgradeLevel ?? 1));
+  const facilityMult = 1 + centerLevel * .12;
+  return (cio * 2.65 + strategy + product + operations) * facilityMult;
 }
 export function canStartResearch(w: World, id: ResearchNodeId): {ok:boolean; reason:string; def:ResearchNodeDef} {
   const def=researchDef(id);
   if (!w.player.operatingRooms.some(r => r.id === "founder-office")) return {ok:false,reason:"Build the Founder Office before starting company-development research.",def};
-  if (!hasSeatedCIO(w)) return {ok:false,reason:"Hire a Chief Innovation Officer and assign them to an office before starting research.",def};
+  if (!w.player.operatingRooms.some((r) => r.facilityType === "research_center")) return {ok:false,reason:"Build a Research Center before starting company-development research.",def};
+  if (!hasSeatedCIO(w)) return {ok:false,reason:"Hire a Chief Innovation Officer and assign them to the Research Center before starting research.",def};
   if (hasResearch(w,id)) return {ok:false,reason:"Already researched.",def};
   if (w.player.research?.active) return {ok:false,reason:"Another capability project is already active.",def};
   const missing=def.prereq.find(p=>!hasResearch(w,p));
@@ -76,6 +81,5 @@ export function facilityResearchRequirement(w: World, kind: OperatingRoomKind): 
 export function officeUpgradeResearchRequirement(w: World, nextLevel: number): string | null {
   if(nextLevel===3 && !hasResearch(w,"organizational_scaling")) return "Research Organizational Scaling to build a 16-seat Large Office.";
   if(nextLevel===4 && !hasResearch(w,"corporate_hq")) return "Research Corporate Headquarters to reach 32 seats.";
-  if(nextLevel>=5 && !hasResearch(w,"vertical_expansion")) return "Research Vertical Expansion before adding HQ floors.";
   return null;
 }
