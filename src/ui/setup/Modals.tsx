@@ -80,6 +80,10 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
   const testDef = TESTING_LEVELS[testingLevel];
   const developmentDays = Math.ceil(tierDef.baseDays * testDef.timeMult);
   const priorityUsed = Object.values(priorityStars).reduce((sum, v) => sum + v, 0);
+  const studiedProducts = world.player.skus
+    .filter((sku) => sku.productKey === productKey && sku.marketStudy)
+    .sort((a, b) => (b.marketStudy?.completedTick ?? 0) - (a.marketStudy?.completedTick ?? 0));
+  const retainedLessons = Array.from(new Map(studiedProducts.flatMap((sku) => sku.marketStudy?.lessons ?? []).map((lesson) => [lesson.id, lesson])).values()).slice(0, 6);
 
   const productRooms = world.player.operatingRooms.filter((r) => roomSupportsProductDesign(r, archetype?.industryId));
   const seatedPmIds = new Set(productRooms.flatMap((r) => r.assignedPersonnelIds));
@@ -150,6 +154,16 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}><button style={ctrlBtn} onClick={onClose}>Cancel</button><div style={{ display: "grid", justifyItems: "end" }}><button disabled={!canContinue} title={!canContinue ? (!name.trim() ? "Give the product a working name first." : "This category is not unlocked for the selected brand/business.") : undefined} style={{ ...bigBtn, opacity: canContinue ? 1 : .45 }} onClick={() => setStep(2)}>Continue to design →</button>{!canContinue && <DisabledReason>{!name.trim() ? "Give the product a working name first." : "Choose a product category currently unlocked for this business."}</DisabledReason>}</div></div>
     </div> : <div>
       <FieldLabel>2. Build the design</FieldLabel>
+      {retainedLessons.length > 0 && <div style={{ marginBottom: 14, padding: 11, borderRadius: 10, border: `1px solid ${C.cyan}55`, background: `${C.cyan}08` }}>
+        <div style={{ color: C.cyan, fontSize: 9, fontWeight: 900, letterSpacing: .7 }}>LEARNED FROM PRIOR {archetype?.label?.toUpperCase() ?? "PRODUCT"} LAUNCHES</div>
+        <div style={{ color: C.dim, fontSize: 10.5, marginTop: 3 }}>These are facts, not automatic bonuses. Change the priorities, IP, project class or later commercial plan yourself.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 6, marginTop: 8 }}>{retainedLessons.map((lesson) => {
+          const applied = lesson.kind === "priority" && lesson.priorityKey
+            ? (priorityStars[lesson.priorityKey] ?? 1) >= (lesson.recommendedStars ?? 5)
+            : lesson.kind === "ip" ? Boolean(ipId) : false;
+          return <div key={lesson.id} style={{ background: "white", border: `1px solid ${applied ? "#b8e6ce" : C.line}`, borderRadius: 8, padding: 8 }}><b style={{ color: applied ? C.green : C.ink, fontSize: 10.5 }}>{applied ? "✓ Applied: " : "○ Consider: "}{lesson.title}</b><div style={{ color: C.faint, fontSize: 9.4, lineHeight: 1.35, marginTop: 2 }}>{lesson.action}</div></div>;
+        })}</div>
+      </div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 18 }}>
         <div>
           <div style={{ fontWeight: 750, marginBottom: 7, fontSize: 12.5 }}>Product priorities</div>
@@ -183,7 +197,7 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
               {usableIps.map((ip) => <button key={ip.id} onClick={() => setIpId(ip.id)} style={{ ...ctrlBtn, textAlign: "left", borderColor: ipId === ip.id ? C.violet : C.line, color: ipId === ip.id ? C.violet : C.dim }}>{ip.name} · {Math.round(ipProductFit(ip, productKey) * 5)}/5 fit</button>)}
             </div>
           </div>}
-          <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: C.panel2, border: `1px solid ${C.line}`, fontSize: 11.5 }}><b>{projectTier} product project</b> · ~{developmentDays} days · {projectTier === "A" ? "1-person team" : projectTier === "AA" ? "2-person team" : "4-person team"}<br /><span style={{ color: C.faint }}>Audience: {targetLabel}</span></div>
+          <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: C.panel2, border: `1px solid ${C.line}`, fontSize: 11.5 }}><b>{projectTier} product project</b> · ~{developmentDays} days · {projectTier === "A" ? "1-person team" : projectTier === "AA" ? "2-person team" : "4-person team"}<br /><span style={{ color: C.faint }}>Audience: {targetLabel}</span><div style={{ marginTop: 7, color: C.dim, fontSize: 10.2 }}>Expected review ceiling: <b style={{ color: C.ink }}>{projectTier === "A" ? "up to 2.9★" : projectTier === "AA" ? "up to 4.1★" : "up to 5.0★"}</b>. Review measures the product; sales still depend on the audience, proposition, price, IP, channels and awareness.</div></div>
         </div>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}><button style={ctrlBtn} onClick={() => { setCreateError(null); setStep(1); }}>← Back</button><div style={{ display: "grid", justifyItems: "end" }}><button disabled={!canStart} title={!canStart ? "You need an available Product Designer seated in a product-capable office." : undefined} style={{ ...bigBtn, opacity: canStart ? 1 : .45 }} onClick={() => {

@@ -19,11 +19,15 @@ import { recordChronicle, recordProductDesignComplete, updateChronicleTick } fro
 import { archetypeByKey } from "./productCatalog";
 import { simulateSecondaryIndustryMarket } from "./secondaryMarket";
 import { consumeInventoryLots, maybeTriggerRecall, processInventoryAgeing, productDemandMultiplier, receiveInventoryLot, updateProductMomentum } from "./productDynamics";
-import { ensureIndustryMarket, syncPrimaryMarketFromAliases } from "./markets";
+import { ensureIndustryMarket, marketWorldView, syncPrimaryMarketFromAliases } from "./markets";
 import { accrueIPRoyaltiesAndDynamics, expireIPContracts, ipAwarenessFloor, ipDemandMultiplier, royaltyCostQuarterly } from "./ip";
 import { productMarketFitForCell, bestFitDiagnosis, partnerRecommendations } from "./productMarketFit";
 import { updateResearch } from "./research";
 import { difficultyConfig } from "./difficulty";
+import { recordQuarterlyCompetitiveReview } from "./competitiveWorld";
+import { updateGameplay } from "./gameplay";
+import { updateCampaign } from "./campaign";
+import { buildProductMarketStudy, reviewPricePower } from "./productReview";
 
 const REF_PRICE = 45;
 let adjacencyCache: { size: number; adj: Record<number, number[]> } | null = null;
@@ -192,7 +196,7 @@ export function step(w: World): World {
         }
       }
       const centerType = pmRoom ? roomFacilityType(pmRoom) : "office";
-      const centerBonus = centerType === "beauty_center" || centerType === "toy_center" ? 1 + (pmRoom?.upgradeLevel ?? 1) * .10 : 1;
+      const centerBonus = ["beauty_center","toy_center","food_center","fashion_atelier","electronics_lab"].includes(centerType ?? "") ? 1 + (pmRoom?.upgradeLevel ?? 1) * .10 : centerType === "design_studio" ? 1 + (pmRoom?.upgradeLevel ?? 1) * .05 : 1;
       const designSpeed = pmRoom && pm ? (0.75 + productManagerEffectiveness(pm, p.productKey) * 0.75) * centerBonus : 0.25;
       p.designDaysLeft = Math.max(0, p.designDaysLeft - designSpeed);
       if (p.designDaysLeft <= 0) {
@@ -325,14 +329,15 @@ export function step(w: World): World {
       // per-category equity effects
       const eqDemand = equityDemandMult(w, ci, cell, p.productKey, p.brandId);
       const eqPricePower = pricingPower(w, ci, p.productKey, p.brandId);
-      const effPriceSens = cell.priceSens * (1 - eqPricePower);
+      const effPriceSens = cell.priceSens * (1 - clamp(eqPricePower + reviewPricePower(p, cell), 0, .75));
       const priceTerm = 1 - clamp(p.listPrice / REF_PRICE - 1, -0.6, 0.9) * effPriceSens * 0.5;
       const qTerm = 1 - cell.qualitySens + cell.qualitySens * p.perceivedQuality;
+      const designTerm = .72 + clamp(p.designQuality, 0, 1) * .56;
       const aware = (cell.awareness[p.id] ?? 0) * (0.4 + 0.6 * skuDistribution[i].reach);
       const commercialFit = productMarketFitForCell(w, p, cell).overall;
       // Marketing can make people aware of a bad proposition, but cannot brute-force them into buying it.
       const commercialConversion = 0.10 + commercialFit * 0.90;
-      return Math.max(0, fStatic * qTerm * (1 + visionBonus(w, "quality")) * priceTerm * eqDemand * (1 + visionBonus(w, "sales")))
+      return Math.max(0, fStatic * qTerm * designTerm * (1 + visionBonus(w, "quality")) * priceTerm * eqDemand * (1 + visionBonus(w, "sales")))
         * aware * productDemandMultiplier(p, w.tick) * ipDemandMultiplier(w, p, cell) * commercialConversion;
     });
     // each competitor's appeal = sum over their products
@@ -704,7 +709,30 @@ export function step(w: World): World {
   const shareYear = windowShare(TICKS_PER_YEAR);
 
   for (const st of w.studies) {
-    if (!st.done) { st.ticksLeft -= (0.70 + teamEffectiveness(w, "strategy") * 0.60) * facilityEffectMultiplier(w, "insights"); if (st.ticksLeft <= 0) { st.done = true; w.revealed[st.type] = { ...computeStudyFact(w, st.type), asOfTick: w.tick }; } }
+    if (!st.done) {
+      st.ticksLeft -= (0.70 + teamEffectiveness(w, "strategy") * 0.60) * facilityEffectMultiplier(w, "insights");
+      if (st.ticksLeft <= 0) {
+        st.done = true;
+        const fact = computeStudyFact(w, st.type, st.skuId);
+        w.revealed[st.type] = { ...fact, asOfTick: w.tick };
+        if (st.type === "product_diagnosis" && st.skuId) {
+          const sku = w.player.skus.find((candidate) => candidate.id === st.skuId);
+          const diagnosis = fact.diagnoses?.find((item: any) => item.skuId === st.skuId);
+          if (sku && diagnosis) {
+            const firstStudy = (sku.marketStudyCount ?? 0) === 0;
+            sku.marketStudyCount = (sku.marketStudyCount ?? 0) + 1;
+            sku.marketStudy = diagnosis.report;
+            if (firstStudy) {
+              const coverage = clamp(.10 + Math.min(5, diagnosis.report?.lessons?.length ?? 0) * .04, .10, .30);
+              w.player.productLearning[sku.productKey] = clamp((w.player.productLearning[sku.productKey] ?? 0) + coverage, 0, 1);
+              w.events.push({ tick: w.tick, kind: "market", text: `🔎 ${sku.name} study complete — ${diagnosis.report?.lessons?.length ?? 0} actionable lesson${diagnosis.report?.lessons?.length === 1 ? "" : "s"} retained for the next brief.` });
+            } else {
+              w.events.push({ tick: w.tick, kind: "market", text: `🔎 ${sku.name} follow-up study complete. The current commercial diagnosis has been refreshed.` });
+            }
+          }
+        }
+      }
+    }
   }
 
   // ---- expertise: grows with cumulative sales per category ----
@@ -753,6 +781,26 @@ export function step(w: World): World {
     shareMonth, shareYear,
     totalMarket, totalReach, onlineCoverage, avgMarginCut,
   };
+
+  // The first seven days are a real commercial milestone, not just another number in a table.
+  // Report the actual sales generated by this SKU once, then let the normal product-analysis
+  // loop take over. A resumed legacy save is marked as reviewed rather than surfacing a stale
+  // "week one" alert months after launch.
+  for (const sku of w.player.skus) {
+    const daysSinceLaunch = w.tick - sku.launchTick;
+    if (!sku.releasedToMarket || sku.launchWeekReported || daysSinceLaunch < 7) continue;
+    if (daysSinceLaunch > 14) { sku.launchWeekReported = true; continue; }
+    const dist = distributionMetricsForSku(w, sku);
+    const weekUnits = Math.max(0, sku.unitsSoldTotal);
+    const weekNetSales = weekUnits * sku.listPrice * (1 - dist.marginCut);
+    const marketWeek = Math.max(1, totalMarket / 52);
+    const initialShare = clamp(weekNetSales / marketWeek, 0, 1);
+    sku.launchWeekReported = true;
+    w.events.push({ tick: w.tick, kind: "product", text: `📊 ${sku.name} first market week — ${Math.round(weekUnits).toLocaleString()} units sold, $${Math.round(weekNetSales).toLocaleString()} net sales, initial category share ${(initialShare * 100).toFixed(2)}%.` });
+  }
+  if (w.tick % TICKS_PER_QUARTER === 0) recordQuarterlyCompetitiveReview(w);
+  updateGameplay(w);
+  updateCampaign(w);
   updateChronicleTick(w, { netRevenueQuarterRunRate: netRevenue, profitQuarterRunRate: profit, actualUnits: actualUnitsTick });
   const scale = companyScale(w);
   if (scale.id !== "startup") {
@@ -768,7 +816,7 @@ export function step(w: World): World {
 }
 
 // studies (kept here to avoid cycles; small)
-export function computeStudyFact(w: World, type: string): any {
+export function computeStudyFact(w: World, type: string, skuId?: string): any {
   if (type === "market_map") return { ok: true };
   if (type === "gap_analysis") {
     const all = [
@@ -788,28 +836,18 @@ export function computeStudyFact(w: World, type: string): any {
     };
   }
   if (type === "product_diagnosis") {
-    const diagnoses = w.player.skus.filter((s) => s.industryId === w.industryId).map((s) => {
-      const result = bestFitDiagnosis(w, s);
-      if (!result.best) return { sku: s.name, verdict: "weak", message: `${s.name}: insufficient market data.` };
-      const { cell, diag } = result.best;
-      const segLabel = `${cell.coord.age} ${cell.coord.gender}, ${cell.coord.class}, ${cell.coord.geography}, ${cell.coord.family}`;
-      const recommendations = partnerRecommendations(w, s, cell).map(r => r.partner.name);
-      const issueOrder = [
-        { key: "channel", score: diag.channelFit, label: "Channel" },
-        { key: "price", score: diag.priceFit, label: "Price" },
-        { key: "ip", score: diag.ipFit, label: "IP / audience transfer" },
-        { key: "brand", score: diag.brandFit, label: "Brand positioning" },
-        { key: "product", score: diag.productFit, label: "Product proposition" },
-      ].sort((a,b) => a.score - b.score);
-      const worst = issueOrder[0];
-      const verdict = diag.overall < .42 ? "weak" : diag.overall < .70 ? "mismatch" : "healthy";
-      const message = verdict === "healthy"
-        ? `${s.name} is commercially coherent for ${segLabel}. No major mismatch found.`
-        : `${s.name} is strongest with ${segLabel}, but ${worst.label.toLowerCase()} is holding it back.`;
+    const diagnoses = w.player.skus.filter((s) => !s.archived && (skuId ? s.id === skuId : s.industryId === w.industryId)).map((s) => {
+      const studyWorld = s.industryId === w.industryId ? w : marketWorldView(w, s.industryId);
+      const report = buildProductMarketStudy(studyWorld, s);
+      const result = bestFitDiagnosis(studyWorld, s);
+      const diag = result.best?.diag;
       return {
-        sku: s.name, skuId: s.id, segLabel, verdict, message,
-        overall: diag.overall, stars: diag.stars, issues: diag.issues, positives: diag.positives,
-        recommendations,
+        sku: s.name, skuId: s.id, segLabel: report.targetLabel,
+        verdict: report.lessons.length > 2 ? "weak" : report.lessons.length ? "mismatch" : "healthy",
+        message: report.headline, overall: diag?.overall ?? .5, stars: diag?.stars,
+        issues: report.lessons.map((lesson) => lesson.finding), positives: diag?.positives ?? [],
+        recommendations: result.best ? partnerRecommendations(studyWorld, s, result.best.cell).map(r => r.partner.name) : [],
+        report,
       };
     });
     return { diagnoses };

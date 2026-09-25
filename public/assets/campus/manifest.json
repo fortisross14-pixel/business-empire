@@ -1,51 +1,235 @@
 {
-  "version": 1,
+  "version": 3,
   "perspective": "3/4 isometric",
-  "tileAuthority": "registry footprint, never PNG pixel size",
+  "tileAuthority": "engine facility footprint / level footprint; never PNG pixel size",
+  "atlas": {
+    "file": "buildings/v3/building_asset_grid.png",
+    "metadata": "buildings/v3/building_asset_grid.json",
+    "transparent": true
+  },
   "assets": [
     {
-      "id": "startup_hq",
+      "id": "founder_office_1",
       "category": "building",
-      "file": "buildings/startup_hq.png",
+      "file": "buildings/v3/founder_office_1.png",
+      "footprint": [
+        2,
+        2
+      ]
+    },
+    {
+      "id": "founder_office_2",
+      "category": "building",
+      "file": "buildings/v3/founder_office_2.png",
+      "footprint": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "founder_office_3",
+      "category": "building",
+      "file": "buildings/v3/founder_office_3.png",
       "footprint": [
         4,
         4
       ]
     },
     {
-      "id": "corporate_hq",
+      "id": "founder_office_4",
       "category": "building",
-      "file": "buildings/corporate_hq.png",
+      "file": "buildings/v3/founder_office_4.png",
       "footprint": [
-        6,
-        6
-      ],
-      "status": "future physical HQ upgrade"
+        5,
+        5
+      ]
     },
     {
-      "id": "beauty_lab",
+      "id": "design_studio",
       "category": "building",
-      "file": "buildings/beauty_lab.png",
+      "file": "buildings/v3/design_studio.png",
+      "footprint": [
+        2,
+        2
+      ]
+    },
+    {
+      "id": "beauty_center_1",
+      "category": "building",
+      "file": "buildings/v3/beauty_center_1.png",
+      "footprint": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "beauty_center_2",
+      "category": "building",
+      "file": "buildings/v3/beauty_center_2.png",
       "footprint": [
         4,
         4
       ]
     },
     {
-      "id": "toy_studio",
+      "id": "toy_center_1",
       "category": "building",
-      "file": "buildings/toy_studio.png",
+      "file": "buildings/v3/toy_center_1.png",
+      "footprint": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "toy_center_2",
+      "category": "building",
+      "file": "buildings/v3/toy_center_2.png",
       "footprint": [
         4,
         4
       ]
     },
     {
-      "id": "warehouse",
+      "id": "research_center_1",
       "category": "building",
-      "file": "buildings/warehouse.png",
+      "file": "buildings/v3/research_center_1.png",
       "footprint": [
-        6,
+        3,
+        3
+      ]
+    },
+    {
+      "id": "research_center_2",
+      "category": "building",
+      "file": "buildings/v3/research_center_2.png",
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "id": "research_center_3",
+      "category": "building",
+      "file": "buildings/v3/research_center_3.png",
+      "footprint": [
+        5,
+        5
+      ]
+    },
+    {
+      "id": "training_center_1",
+      "category": "building",
+      "file": "buildings/v3/training_center_1.png",
+      "footprint": [
+        2,
+        2
+      ]
+    },
+    {
+      "id": "training_center_2",
+      "category": "building",
+      "file": "buildings/v3/training_center_2.png",
+      "footprint": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "warehouse_small",
+      "category": "building",
+      "file": "buildings/v3/warehouse_small.png",
+      "footprint": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "warehouse_medium",
+      "category": "building",
+      "file": "buildings/v3/warehouse_medium.png",
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "id": "warehouse_large",
+      "category": "building",
+      "file": "buildings/v3/warehouse_large.png",
+      "footprint": [
+        5,
+        5
+      ]
+    },
+    {
+      "id": "brand_studio",
+      "category": "building",
+      "file": "buildings/v3/brand_studio.png",
+      "footprint": [
+        2,
+        2
+      ]
+    },
+    {
+      "id": "hr_office",
+      "category": "building",
+      "file": "buildings/v3/hr_office.png",
+      "footprint": [
+        2,
+        2
+      ]
+    },
+    {
+      "id": "marketing_office",
+      "category": "building",
+      "file": "buildings/v3/marketing_office.png",
+      "footprint": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "logistics_office",
+      "category": "building",
+      "file": "buildings/v3/logistics_office.png",
+      "footprint": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "consumer_insights",
+      "category": "building",
+      "file": "buildings/v3/consumer_insights.png",
+      "footprint": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": "cold_storage",
+      "category": "building",
+      "file": "buildings/v3/cold_storage.png",
+      "footprint": [
+        4,
+        4
+      ]
+    },
+    {
+      "id": "distribution_hub",
+      "category": "building",
+      "file": "buildings/v3/distribution_hub.png",
+      "footprint": [
+        5,
+        5
+      ]
+    },
+    {
+      "id": "executive_wing",
+      "category": "building",
+      "file": "buildings/v3/executive_wing.png",
+      "footprint": [
+        4,
         4
       ]
     },
@@ -56,43 +240,18 @@
       "footprint": [
         6,
         4
-      ]
+      ],
+      "note": "legacy art; upgrade footprint grows via engine"
     },
     {
-      "id": "office_expansion",
-      "category": "expansion",
-      "file": "expansions/office_expansion.png",
-      "footprint": [
-        4,
-        2
-      ]
-    },
-    {
-      "id": "warehouse_expansion",
-      "category": "expansion",
-      "file": "expansions/warehouse_expansion.png",
-      "footprint": [
-        4,
-        2
-      ]
-    },
-    {
-      "id": "factory_upgrade",
-      "category": "expansion",
-      "file": "expansions/factory_upgrade.png",
-      "footprint": [
-        4,
-        2
-      ]
-    },
-    {
-      "id": "loading_dock",
-      "category": "expansion",
+      "id": "sourcing_office",
+      "category": "building",
       "file": "expansions/loading_dock.png",
       "footprint": [
         3,
         2
-      ]
+      ],
+      "note": "legacy sourcing art"
     },
     {
       "id": "parking_signage",

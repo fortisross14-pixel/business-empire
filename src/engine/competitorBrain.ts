@@ -9,6 +9,7 @@ import type { World, Competitor, Cell, AxisKey, CompetitorProduct } from "./type
 import { TICKS_PER_QUARTER, TICK_RATE_SCALE } from "./types";
 import { AXES, AXIS_KEYS, axisPos, clamp, ease, sum } from "./industries";
 import { fit, effectiveTarget, needMatch } from "./cube";
+import { recordRivalAction } from "./competitiveWorld";
 
 const REF_PRICE = 45;
 const coordKey = (c: Cell) => `${c.coord.gender}|${c.coord.age}|${c.coord.class}|${c.coord.leaning}`;
@@ -106,8 +107,12 @@ function decide(w: World, comp: Competitor) {
       comp.cash -= 400_000;
       comp.lastAction = "invade";
       comp.actionCooldown = 24 * 2; // ~2 years before another big move
-      w.events.push({ tick: w.tick, kind: "rival",
-        text: `🎯 ${comp.name} launched a product targeting your stronghold (${cell.coord.age} · ${cell.coord.class}).` });
+      const segmentLabel = `${cell.coord.age} · ${cell.coord.class}`;
+      const text = `🎯 ${comp.name} launched a product targeting your stronghold (${segmentLabel}).`;
+      recordRivalAction(w, comp, {
+        tick: w.tick, kind: "launch", headline: `${comp.name} enters your stronghold`,
+        detail: text.replace(/^🎯 /, ""), segmentLabel, productKey: np.productKey,
+      }, { text, code: "rival_launch", data: { segmentLabel, productKey: np.productKey, price: np.price, quality: np.quality } });
       return;
     }
   }
@@ -121,8 +126,12 @@ function decide(w: World, comp: Competitor) {
     comp.cash -= 80_000;
     comp.lastAction = "defend";
     comp.actionCooldown = 24; // once a year at most
-    w.events.push({ tick: w.tick, kind: "rival",
-      text: `🛡 ${comp.name} is defending ${cell.coord.age} buyers — ramping marketing.` });
+    const segmentLabel = `${cell.coord.age} buyers`;
+    const text = `🛡 ${comp.name} is defending ${segmentLabel} — ramping marketing.`;
+    recordRivalAction(w, comp, {
+      tick: w.tick, kind: "defend", headline: `${comp.name} raises the pressure`,
+      detail: text.replace(/^🛡 /, ""), segmentLabel,
+    }, { text, code: "rival_defense", data: { segmentLabel, marketing: comp.marketing } });
     return;
   }
 
@@ -135,8 +144,12 @@ function decide(w: World, comp: Competitor) {
       comp.exitedCells.push(key);
       comp.lastAction = "exit";
       comp.actionCooldown = 24;
-      w.events.push({ tick: w.tick, kind: "rival",
-        text: `🏳 ${comp.name} is pulling back from ${cell.coord.age} · ${cell.coord.class} — a gap may open.` });
+      const segmentLabel = `${cell.coord.age} · ${cell.coord.class}`;
+      const text = `🏳 ${comp.name} is pulling back from ${segmentLabel} — a gap may open.`;
+      recordRivalAction(w, comp, {
+        tick: w.tick, kind: "retreat", headline: `${comp.name} abandons ground`,
+        detail: text.replace(/^🏳 /, ""), segmentLabel,
+      }, { text, code: "rival_retreat", data: { segmentLabel } });
       return;
     }
   }

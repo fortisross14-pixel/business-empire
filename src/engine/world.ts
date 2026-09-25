@@ -1,4 +1,4 @@
-import type { World, Brand, SKU, Competitor, AxisKey, DifficultyId, ProductProjectTier } from "./types";
+import type { World, Brand, SKU, Competitor, AxisKey, DifficultyId, ProductProjectTier, ScenarioId } from "./types";
 import { computeProductRarity, DESIGN_DEPTHS, PRODUCT_PROJECT_TIERS } from "./types";
 import { INDUSTRIES, AXES, axisPos, clamp } from "./industries";
 import { buildCube } from "./cube";
@@ -15,16 +15,19 @@ import { createIndustryMarket } from "./markets";
 import { applyFacetSelections, deriveSafetyScore, TESTING_LEVELS } from "./productDynamics";
 import { seedExternalIPs } from "./ip";
 import { difficultyConfig } from "./difficulty";
+import { createCapitalState } from "./capital";
+import { applyScenarioOpening, createGameplayState } from "./gameplay";
+import { reviewScoreForDesign } from "./productReview";
 
 export const STUDY_DEFS: Record<string, { label: string; cost: number; ticks: number; blurb: string }> = {
   market_map: { label: "Population Map Scan", cost: 60000, ticks: 14, blurb: "Reveals headcount + spend across the whole cube." },
   gap_analysis: { label: "Gap Analysis", cost: 90000, ticks: 18, blurb: "Finds cells with high market but weak brand fit — niches." },
   competitor_benchmark: { label: "Competitor Benchmark", cost: 120000, ticks: 24, blurb: "Rivals' price, personality & margin vs. yours." },
-  product_diagnosis: { label: "Post-Launch Product Study", cost: 45_000, ticks: 12, blurb: "Diagnoses Product / Price / Channel / Brand / IP fit and explains what is suppressing demand." },
+  product_diagnosis: { label: "Post-Launch Product Study", cost: 30_000, ticks: 10, blurb: "Diagnoses Product / Price / Channel / Brand / IP fit and turns launch evidence into knowledge for future products." },
   market_report: { label: "Market Report", cost: 150000, ticks: 30, blurb: "Category growth, competitor count, market concentration (top-3 share, who controls 60%), and directional trends." },
 };
 
-export function initWorld(industryId: string, company: string, brand: Brand | null = null, difficulty: DifficultyId = "standard"): World {
+export function initWorld(industryId: string, company: string, brand: Brand | null = null, difficulty: DifficultyId = "standard", scenarioId: ScenarioId = "bootstrap_brand"): World {
   const difficultyDef = difficultyConfig(difficulty);
   const startCash = difficultyDef.startingCash;
   const cfg = INDUSTRIES[industryId];
@@ -34,6 +37,7 @@ export function initWorld(industryId: string, company: string, brand: Brand | nu
 
   const initialBrand: Brand | null = brand ? ensureBrandVisual({ ...brand, id: brand.id || "brand_0", createdTick: 0, industryId }) : null;
   const world: World = {
+    mode: "scenario", campaign: null,
     difficulty, investorConfidence: 1, expectationStrikes: 0,
     industryId, cfg, tick: 0, company, brands: initialBrand ? [initialBrand] : [], primaryBrandId: initialBrand?.id ?? "", cube, comps,
     player: {
@@ -43,6 +47,7 @@ export function initWorld(industryId: string, company: string, brand: Brand | nu
       financeDept: 0, intelDept: 0,
       personnel: [], formerPersonnel: [], talentMarket: [], talentMarketRefreshTick: 0, talentSearch: null, trainingPrograms: [],
       expertise: { industry: {}, category: {} },
+      productLearning: {},
       vision: null,
       operatingRooms: [],
       campusPaths: [{ x: 2, y: 44 }, { x: 3, y: 44 }],
@@ -59,7 +64,8 @@ export function initWorld(industryId: string, company: string, brand: Brand | nu
       corporateCapabilities: { finance: 0, strategy: 0, marketing: 0, operations: 0, retail: 0, people: 0 },
       research: { completed: [], active: null, lifetimePoints: 0 },
     },
-    studies: [], revealed: {}, history: [], events: [],
+    studies: [], revealed: {}, history: [], events: [], competitiveReviews: [],
+    capital: createCapitalState(), gameplay: createGameplayState(scenarioId),
     chronicle: createChronicle(company, cfg.label, startCash),
     ipAssets: seedExternalIPs(), ipLicenses: [],
     pendingShockTick: 80 + Math.floor(Math.random() * 80), shock: null,
@@ -74,6 +80,7 @@ export function initWorld(industryId: string, company: string, brand: Brand | nu
     industryMarkets: { [industryId]: primaryMarket },
     unitsTickHistory: primaryMarket.unitsTickHistory, marketTickHistory: primaryMarket.marketTickHistory,
   };
+  applyScenarioOpening(world);
   return world;
 }
 
@@ -123,7 +130,10 @@ export function buildSku(w: World, spec: ProductSpec, id: string, tick = 0, expe
   const attrSpread = Object.values(faceted.attributes).length > 0
     ? Math.max(...Object.values(faceted.attributes)) - Math.min(...Object.values(faceted.attributes))
     : 0;
-  const designQuality = clamp(Math.min(tierDef.designQualityCap, (0.2 + attrSpread * 0.3 + (spec.pmSkill ?? 0.2) * 0.3 + expertise * 0.04) * depthDef.qualityMult), 0, 1);
+  const experience = clamp(expertise / 5, 0, 1);
+  // Studies reveal what to build; they never invisibly increase this score. Improvement comes
+  // from the player's next brief, team, project class, validation and accumulated experience.
+  const designQuality = clamp(Math.min(tierDef.designQualityCap, (0.17 + attrSpread * 0.24 + (spec.pmSkill ?? 0.2) * 0.51 + experience * 0.08) * depthDef.qualityMult), 0, 1);
   const testingLevel = spec.testingLevel ?? "standard";
   const testDef = TESTING_LEVELS[testingLevel];
   const safetyScore = deriveSafetyScore(spec.productKey, testingLevel, designQuality, quality);
@@ -133,7 +143,8 @@ export function buildSku(w: World, spec: ProductSpec, id: string, tick = 0, expe
     target: faceted.target,
     targetLabel: spec.targetLabel,
     designFacets: spec.designFacets ?? {},
-    testingLevel, safetyScore, recallCount: 0, marketMomentum: 1, peakMomentum: 1, breakout: false,
+    testingLevel, safetyScore, recallCount: 0, marketMomentum: 1, peakMomentum: 1, breakout: false, archived: false, marketStudyCount: 0,
+    reviewScore: reviewScoreForDesign(id, projectTier, designQuality),
     positioning: spec.positioning,
     manufacturingStars: Math.max(1, Math.min(5, Math.round(spec.manufacturingStars))),
     // lifecycle: starts in "designing" state, no inventory, PM locked

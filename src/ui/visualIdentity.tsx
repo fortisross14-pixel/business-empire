@@ -148,46 +148,62 @@ function qualityFrame(stars: number | undefined) {
 export function ProductPackIcon({ productKey, brandColor, accentColor, label, ipLabel, packaging, size = 80 }: { productKey: string; brandColor: string; accentColor: string; label: string; ipLabel?: string | null; packaging?: string; size?: number }) {
   const textColor = toneText(brandColor);
   const ipPalette = ipLabel ? deriveIPPalette({ id: "ip", name: ipLabel } as IPAsset) : null;
-  const cardH = Math.round(size * 1.12);
-  return <div style={{ width: size, height: cardH, borderRadius: 16, background: `linear-gradient(160deg, ${mix(brandColor, "#ffffff", .9)} 0%, #ffffff 48%, ${mix(accentColor, "#ffffff", .9)} 100%)`, border: `1px solid ${mix(brandColor, "#b6c6d8", .58)}`, boxShadow: "0 6px 14px rgba(17,32,52,.08)", position: "relative", overflow: "hidden", flex: "0 0 auto" }}>
-    <img src={productArtUrl(productKey)} alt="" draggable={false} style={{ position: "absolute", inset: "25% 6% 21%", width: "88%", height: "54%", objectFit: "contain", borderRadius: 12 }} />
-    <div style={{ position: "absolute", left: 6, top: 6, maxWidth: "56%", color: textColor, background: brandColor, borderRadius: 999, padding: "3px 6px", fontSize: 7.5, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
-    {ipLabel && ipPalette && <div style={{ position: "absolute", right: 6, top: 6, maxWidth: "42%", color: "#fff", background: `linear-gradient(135deg,${ipPalette[0]},${ipPalette[1]})`, borderRadius: 999, padding: "3px 6px", fontSize: 7.5, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ipLabel}</div>}
-    <div style={{ position: "absolute", left: 7, right: 7, bottom: 7, fontSize: 8, fontWeight: 900, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{archetypeByKey(productKey)?.label ?? productKey}</div>
+  const cardH = Math.round(size * 1.16);
+  const bubbleFont = Math.max(7.5, size * .105);
+  return <div style={{ width: size, height: cardH, borderRadius: 18, background: `linear-gradient(165deg, ${mix(brandColor, "#ffffff", .92)} 0%, #ffffff 44%, ${mix(accentColor, "#ffffff", .90)} 100%)`, border: `1px solid ${mix(brandColor, "#b6c6d8", .54)}`, boxShadow: "0 6px 16px rgba(17,32,52,.09)", position: "relative", overflow: "hidden", flex: "0 0 auto" }}>
+    <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 18% 14%, rgba(255,255,255,.72), transparent 32%)" }} />
+    <div style={{ position: "absolute", left: 7, right: 7, top: 7, display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: ipLabel ? "58%" : "78%", color: textColor, background: brandColor, borderRadius: 999, padding: "4px 8px", boxShadow: "0 3px 8px rgba(17,32,52,.14)" }}>
+        <span style={{ width: Math.max(12, size * .13), height: Math.max(12, size * .13), borderRadius: 999, flex: "0 0 auto", background: "rgba(255,255,255,.28)", border: "1px solid rgba(255,255,255,.5)" }} />
+        <span style={{ fontSize: bubbleFont, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+      </div>
+      {ipLabel && ipPalette && <div style={{ maxWidth: "42%", color: "#fff", background: `linear-gradient(135deg,${ipPalette[0]},${ipPalette[1]})`, borderRadius: 999, padding: "4px 8px", fontSize: bubbleFont, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", boxShadow: "0 3px 8px rgba(17,32,52,.14)" }}>{ipLabel}</div>}
+    </div>
+    <div style={{ position: "absolute", inset: "18% 5% 17%", borderRadius: 15, overflow: "hidden", background: "linear-gradient(180deg, rgba(255,255,255,.84), rgba(244,248,252,.78))", boxShadow: "inset 0 0 0 1px rgba(112,132,153,.12)" }}>
+      <img src={productArtUrl(productKey)} alt="" draggable={false} style={{ position: "absolute", inset: "2% 2% 4%", width: "96%", height: "94%", objectFit: "contain", borderRadius: 12 }} />
+    </div>
+    <div style={{ position: "absolute", left: 9, right: 9, bottom: 8, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+      <span style={{ color: C.ink, fontSize: Math.max(8.2, size * .106), fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{archetypeByKey(productKey)?.label ?? productKey}</span>
+      {packaging && <span style={{ color: C.faint, fontSize: Math.max(7, size * .084), fontWeight: 700 }}>{packaging}</span>}
+    </div>
   </div>;
 }
 
 export function ProductVisualCard({ world, sku, size = 104, showLabels = true }: { world: World; sku: SKU; size?: number; showLabels?: boolean }) {
   const brand = ensureBrandVisual({ ...brandById(world, sku.brandId) });
   const ip = sku.ipId ? ipById(world, sku.ipId) : null;
-  const frame = qualityFrame(sku.manufacturingStars);
+  const reviewScore = sku.reviewScore ?? Math.max(1, Math.min(5, 1 + sku.designQuality * 4));
+  const reviewVisible = sku.status !== "designing";
+  const frame = qualityFrame(reviewVisible ? reviewScore : undefined);
   const accentColor = ip ? deriveIPPalette(ip)[1] : brand.visual?.accentColor ?? mix(brand.color, "#ffffff", .4);
   const cardW = size;
-  const cardH = Math.round(size * 1.18);
-  const stars = Math.max(1, Math.min(5, Math.round(sku.manufacturingStars ?? 3)));
+  const cardH = Math.round(size * 1.24);
+  const bubbleFont = Math.max(8, size * .09);
   return <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
-    <div style={{ width: cardW, height: cardH, borderRadius: UI.radius.lg, background: `linear-gradient(160deg, ${mix(brand.color, "#ffffff", .91)} 0%, #fff 46%, ${mix(accentColor, "#ffffff", .91)} 100%)`, border: frame.border, boxShadow: frame.glow, position: "relative", overflow: "hidden", flex: "0 0 auto" }}>
-      <div style={{ position: "absolute", inset: "24% 5% 20%", borderRadius: 14, overflow: "hidden", background: "rgba(255,255,255,.48)", boxShadow: "inset 0 0 0 1px rgba(112,132,153,.12)" }}>
-        <img src={productArtUrl(sku.productKey)} alt={`${archetypeByKey(sku.productKey)?.label ?? sku.productKey} illustration`} draggable={false} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
-      </div>
-      <div style={{ position: "absolute", left: 7, right: 7, top: 7, display: "flex", justifyContent: "space-between", gap: 5, alignItems: "flex-start" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, maxWidth: ip ? "58%" : "78%", background: "rgba(255,255,255,.94)", border: `1px solid ${mix(brand.color, "#ffffff", .52)}`, borderRadius: 999, padding: "4px 7px 4px 5px", boxShadow: "0 2px 7px rgba(23,37,54,.09)" }}>
-          <span style={{ width: 11, height: 11, borderRadius: 999, flex: "0 0 auto", background: `linear-gradient(135deg,${brand.color},${accentColor})`, border: "1px solid rgba(255,255,255,.75)", boxShadow: "0 1px 3px rgba(17,32,52,.15)" }} />
-          <span style={{ color: C.ink, fontSize: 8.3, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{brand.name}</span>
+    <div style={{ width: cardW, height: cardH, borderRadius: 18, background: `linear-gradient(165deg, ${mix(brand.color, "#ffffff", .92)} 0%, #fff 44%, ${mix(accentColor, "#ffffff", .91)} 100%)`, border: frame.border, boxShadow: frame.glow, position: "relative", overflow: "hidden", flex: "0 0 auto" }}>
+      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle at 18% 14%, rgba(255,255,255,.74), transparent 32%)" }} />
+      <div style={{ position: "absolute", left: 8, right: 8, top: 8, display: "flex", justifyContent: "space-between", gap: 6, alignItems: "flex-start" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: ip ? "58%" : "80%", background: "rgba(255,255,255,.97)", border: `1px solid ${mix(brand.color, "#ffffff", .48)}`, borderRadius: 999, padding: "5px 8px 5px 6px", boxShadow: "0 2px 8px rgba(23,37,54,.10)" }}>
+          <span style={{ width: Math.max(13, size * .12), height: Math.max(13, size * .12), borderRadius: 999, flex: "0 0 auto", background: `linear-gradient(135deg,${brand.color},${accentColor})`, border: "1px solid rgba(255,255,255,.78)", boxShadow: "0 1px 3px rgba(17,32,52,.14)" }} />
+          <span style={{ color: C.ink, fontSize: bubbleFont, fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{brand.name}</span>
         </div>
-        {ip && <div style={{ maxWidth: "40%", fontSize: 7.8, fontWeight: 900, color: deriveIPPalette(ip)[0], background: "rgba(255,255,255,.94)", border: `1px solid ${mix(deriveIPPalette(ip)[0], "#ffffff", .38)}`, borderRadius: 999, padding: "4px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ip.name}</div>}
+        {ip && <div style={{ maxWidth: "40%", fontSize: bubbleFont, fontWeight: 900, color: deriveIPPalette(ip)[0], background: "rgba(255,255,255,.96)", border: `1px solid ${mix(deriveIPPalette(ip)[0], "#ffffff", .36)}`, borderRadius: 999, padding: "5px 8px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", boxShadow: "0 2px 8px rgba(23,37,54,.08)" }}>{ip.name}</div>}
       </div>
-      <div style={{ position: "absolute", left: 8, right: 8, bottom: 7, display: "grid", gap: 2 }}>
-        <div style={{ fontSize: Math.max(8.5, size * .085), fontWeight: 900, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sku.name}</div>
+      <div style={{ position: "absolute", inset: "18% 4.5% 18%", borderRadius: 16, overflow: "hidden", background: "linear-gradient(180deg, rgba(255,255,255,.86), rgba(244,248,252,.80))", boxShadow: "inset 0 0 0 1px rgba(112,132,153,.12)" }}>
+        <img src={productArtUrl(sku.productKey)} alt={`${archetypeByKey(sku.productKey)?.label ?? sku.productKey} illustration`} draggable={false} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", padding: "2% 2% 4%", boxSizing: "border-box" }} />
+      </div>
+      <div style={{ position: "absolute", left: 9, right: 9, bottom: 8, display: "grid", gap: 3 }}>
+        <div style={{ fontSize: Math.max(9.5, size * .103), fontWeight: 900, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sku.name}</div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 5, alignItems: "center" }}>
-          <span style={{ color: C.faint, fontSize: Math.max(7, size * .067), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{archetypeByKey(sku.productKey)?.label ?? sku.productKey}</span>
-          <span style={{ color: stars >= 5 ? "#b77912" : stars >= 4 ? C.violet : C.dim, fontSize: Math.max(8, size * .075), fontWeight: 900, letterSpacing: .5 }}>{"★".repeat(stars)}</span>
+          <span style={{ color: C.faint, fontSize: Math.max(7.6, size * .078), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{archetypeByKey(sku.productKey)?.label ?? sku.productKey}</span>
+          <span title={reviewVisible ? "Product review — separate from manufacturing standard and sales" : "Product review is revealed when design completes"} style={{ color: reviewVisible && reviewScore >= 4.8 ? "#b77912" : reviewVisible && reviewScore >= 4 ? C.violet : C.dim, fontSize: Math.max(9, size * .086), fontWeight: 900, letterSpacing: .25 }}>{reviewVisible ? `★ ${reviewScore.toFixed(1)}` : "Review pending"}</span>
         </div>
       </div>
     </div>
     {showLabels && <div style={{ minWidth: 0 }}><div style={{ color: C.ink, fontWeight: 800, fontSize: 13.5 }}>{sku.name}</div><div style={{ color: C.faint, fontSize: 10.5 }}>{brand.name}{ip ? ` × ${ip.name}` : ""}</div></div>}
   </div>;
 }
+
 
 function competitorPalette(comp: Competitor) {
   const h = hashString(`${comp.name}_${comp.personality}_${comp.products[0]?.productKey ?? ''}`.toLowerCase());
@@ -230,11 +246,11 @@ export function CompetitorChip({ comp }: { comp: Competitor }) {
   return <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "4px 8px", borderRadius: 999, background: "#ffffff", border: `1px solid ${C.line}`, boxShadow: "0 2px 8px rgba(17,32,52,.05)" }}><CompetitorLogoMark comp={comp} size={22} /><span style={{ color: C.ink, fontWeight: 700, fontSize: 11.5 }}>{comp.name}</span></div>;
 }
 
-export function CompetitorCard({ comp, size = 80 }: { comp: Competitor; size?: number }) {
+export function CompetitorCard({ comp, size = 80, onClick, selected = false }: { comp: Competitor; size?: number; onClick?: () => void; selected?: boolean }) {
   const [base, accent] = competitorPalette(comp);
   const firstProduct = comp.products[0]?.productKey ?? "";
   const productLabel = archetypeByKey(firstProduct)?.label ?? firstProduct;
-  return <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)", border: `1px solid ${C.line}`, borderRadius: 14, padding: 12, boxShadow: "0 6px 16px rgba(17,32,52,.05)" }}>
+  return <div onClick={onClick} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={onClick ? (event) => { if (event.key === "Enter" || event.key === " ") onClick(); } : undefined} style={{ background: "linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)", border: `1px solid ${selected ? C.violet : C.line}`, borderRadius: 14, padding: 12, boxShadow: selected ? "0 0 0 2px rgba(124,58,237,.12),0 8px 20px rgba(17,32,52,.08)" : "0 6px 16px rgba(17,32,52,.05)", cursor: onClick ? "pointer" : undefined }}>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
       <CompetitorLogoMark comp={comp} size={38} withName />
       <span style={{ color: comp.personality === 'premium' ? '#7c3aed' : comp.personality === 'discounter' ? '#d97706' : C.cyan, fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: .65 }}>{comp.personality}</span>
@@ -247,5 +263,6 @@ export function CompetitorCard({ comp, size = 80 }: { comp: Competitor; size?: n
         <div style={{ color: C.faint, fontSize: 10.5, marginTop: 2 }}>Strength {Math.round(comp.strength * 100)} · Mkt/Q ${Math.round(comp.marketing).toLocaleString()}</div>
       </div>
     </div>
+    {onClick && <div style={{ color: C.violet, fontSize: 9.5, fontWeight: 850, textAlign: "right", marginTop: 8 }}>Open rival dossier →</div>}
   </div>;
 }

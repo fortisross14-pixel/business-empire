@@ -1,35 +1,31 @@
-# Campus Asset Pack
+# Campus Asset Pack v3
 
-All campus art is stored as **individual transparent PNGs**. Placement is controlled by
-`src/ui/campus/assetRegistry.ts`, not by the pixel dimensions of the image.
+The runtime uses **individual transparent PNGs** under `buildings/v3/`. A transparent 5×5 contact atlas is also included as `buildings/v3/building_asset_grid.png`, with cell metadata in `building_asset_grid.json`.
 
-## Rules for future assets
+## Important rules
 
-1. Use the same 3/4 isometric camera / light direction as the current pack.
-2. Export RGBA PNG with a genuinely transparent background.
-3. Keep the building centered horizontally and its ground contact near the bottom-center anchor.
-4. Add the PNG under one of:
-   - `buildings/`
-   - `expansions/`
-   - `decor/`
-5. Add one registry entry with:
-   - `footprint: { w, h }` in campus grid tiles
-   - `anchor` (normally `{ x: .5, y: .965 }`)
-   - `scale`
-   - compatible room kinds, if applicable
-6. Never derive collisions from PNG size. **Grid footprint is authoritative.**
+- Grid footprints come from `src/engine/infrastructure.ts`; PNG dimensions never control collisions.
+- Every facility upgrade can claim a larger footprint. The player chooses the enlarged footprint again on the campus map.
+- An expansion may overlap the building's own current footprint, but cannot cover paths, collide with other facilities, leave the map, or lose connected-path access.
+- Runtime art selection is in `src/ui/campus/assetRegistry.ts`.
+- All v3 art is RGBA, cropped to visible content plus a small transparent safety margin.
 
-## Current footprints
+## Core footprint progression
 
-- Startup HQ — 4×4
-- Corporate HQ — 6×6
-- Beauty Lab — 4×4
-- Toy Studio — 4×4
-- Warehouse — 6×4
-- Factory — 6×4
-- Office Expansion — 4×2
-- Warehouse Expansion — 4×2
-- Factory Upgrade — 4×2
-- Loading Dock — 3×2
-- Parking & Signage — 4×3
-- Landscaping Plaza — 4×4
+- Founder Office: **2×2 → 3×3 → 4×4 → 5×5**
+- Design Studio: **2×2 → 3×3**
+- Beauty Center: **3×3 → 4×4**
+- Toy Center: **3×3 → 4×4**
+- Research Center: **3×3 → 4×4 → 5×5**
+- Training Room: **2×2 → 3×3**
+- Warehouse: **3×3 → 4×4 → 5×5**
+- Brand Studio: **2×2 → 3×3**
+- HR Office: **2×2 → 3×3**
+- Marketing Office: **3×3 → 4×4**
+- Logistics Office: **3×3 → 4×4**
+- Consumer Insights Lab: **3×3 → 4×4**
+- Cold Storage: **4×4 → 5×5**
+- Distribution Hub: **5×5 → 6×6**
+- Executive Wing: **4×4 → 5×5**
+
+Some tier-II/III specialist assets currently reuse the same authored illustration while the **physical footprint and map scale grow**. The registry keeps separate tier filenames so unique replacement art can be dropped in later without changing saves or code.

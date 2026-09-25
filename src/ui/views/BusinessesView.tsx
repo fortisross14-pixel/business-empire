@@ -1,5 +1,5 @@
 import type { World, IndustryBusiness } from "../../engine/types";
-import { INDUSTRIES } from "../../engine/industries";
+import { INDUSTRIES, INDUSTRY_ICONS } from "../../engine/industries";
 import { canStartIndustryEntry, industryEntrySpeed, INDUSTRY_ENTRY_DEFS } from "../../engine/businesses";
 import { companyScale } from "../../engine/growth";
 import { Panel } from "../components";
@@ -27,7 +27,7 @@ export function BusinessesView({ world, startIndustryEntry }: { world: World; st
           const runRateRevenue = world.player.skus.reduce((sum, sku, i) => sum + (sku.industryId === b.industryId ? (world.live?.skuResults?.[i]?.revenue ?? 0) : 0), 0);
           const runRateMargin = world.player.skus.reduce((sum, sku, i) => sum + (sku.industryId === b.industryId ? (world.live?.skuResults?.[i]?.margin ?? 0) : 0), 0);
           return <div key={b.industryId} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 10, padding: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b style={{ fontSize: 16 }}>{cfg?.label ?? b.industryId}</b><span style={{ color: C.green, fontSize: 10, fontWeight: 800 }}>ACTIVE</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b style={{ fontSize: 16 }}>{INDUSTRY_ICONS[b.industryId] ?? "🏭"} {cfg?.label ?? b.industryId}</b><span style={{ color: C.green, fontSize: 10, fontWeight: 800 }}>ACTIVE</span></div>
             <div style={{ color: C.faint, fontSize: 11, marginTop: 4 }}>{brands.length} brand{brands.length === 1 ? "" : "s"} · {skus.length} product{skus.length === 1 ? "" : "s"} · {customers.toLocaleString()} customers · {runtime?.comps.length ?? (b.industryId === world.industryId ? world.comps.length : 0)} competitors · entered Y{Math.floor(b.enteredTick / 360) + 1}</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginTop: 10 }}>
               <div style={{ background: C.panel, borderRadius: 7, padding: 7 }}><div style={{ color: C.faint, fontSize: 9 }}>REVENUE / Q</div><b style={{ fontSize: 12 }}>{fmtMoney(runRateRevenue)}</b></div>
@@ -59,7 +59,7 @@ export function BusinessesView({ world, startIndustryEntry }: { world: World; st
         const progress = project ? 1 - project.daysLeft / project.totalDays : 0;
         return <div key={def.industryId} style={{ borderTop: `1px solid ${C.line}`, padding: "13px 0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <div style={{ flex: "1 1 360px" }}><div style={{ fontWeight: 800 }}>{def.label}</div><div style={{ color: C.dim, fontSize: 11.5, marginTop: 4 }}>{def.blurb}</div><div style={{ color: C.faint, fontSize: 10.5, marginTop: 6 }}>{fmtMoney(def.investment)} · {def.days} days · Organic entry</div></div>
+            <div style={{ flex: "1 1 360px" }}><div style={{ fontWeight: 800 }}>{INDUSTRY_ICONS[def.industryId] ?? "🏭"} {def.label}</div><div style={{ color: C.dim, fontSize: 11.5, marginTop: 4 }}>{def.blurb}</div><div style={{ color: C.faint, fontSize: 10.5, marginTop: 6 }}>{fmtMoney(def.investment)} · {def.days} days · Organic entry</div></div>
             {done ? <span style={{ color: C.green, fontWeight: 800, fontSize: 11 }}>BUSINESS ESTABLISHED</span> : project ? <span style={{ color: entryRate>0?C.cyan:C.amber, fontWeight: 800, fontSize: 11 }}>{entryRate>0?`${Math.ceil(project.daysLeft/entryRate)}d estimated`:`PAUSED · Product + Strategy required`}</span> : <button disabled={!check.ok} onClick={() => startIndustryEntry(def.industryId)} style={{ background: check.ok ? C.violet : C.panel2, color: check.ok ? "#fff" : C.faint, border: `1px solid ${check.ok ? C.violet : C.line}`, borderRadius: 7, padding: "7px 11px", cursor: check.ok ? "pointer" : "default", fontWeight: 700 }}>Enter {def.label}</button>}
           </div>
           {project && <div style={{ height: 7, background: C.grid, borderRadius: 5, marginTop: 9 }}><div style={{ width: `${Math.max(0,Math.min(1,progress))*100}%`, height: "100%", background: C.cyan, borderRadius: 5 }} /></div>}

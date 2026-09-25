@@ -192,7 +192,7 @@ export function maybeTriggerRecall(w: World, sku: SKU) {
   const p = archetypeByKey(sku.productKey);
   if (!p || p.regulation === "standard" || sku.status !== "active" || sku.releasedToMarket !== true || sku.inventory <= 0 || w.tick % 30 !== 0) return;
   const safety = clamp(sku.safetyScore ?? 0.75, 0.2, 0.999);
-  const baseMonthly = p.regulation === "food_safety" ? 0.010 : p.regulation === "child_safety" ? 0.007 : 0.0035;
+  const baseMonthly = p.regulation === "food_safety" ? 0.010 : p.regulation === "electronics_safety" ? 0.008 : p.regulation === "child_safety" ? 0.007 : 0.0035;
   const complexity = 1 + Math.max(0, p.manufacturingFamilies.length - 1) * 0.18 + (p.modules.includes("technology") ? 0.3 : 0);
   const risk = baseMonthly * complexity * Math.pow((1 - safety) / 0.25, 2);
   if (Math.random() >= risk) return;

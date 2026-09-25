@@ -5,6 +5,142 @@ customer cells (age × gender × class × leaning), launch products that earn aw
 from zero, negotiate distribution contracts, and manage cash through working capital —
 while competitors react and the population shifts under you.
 
+## v2.1 — Business School Campaign
+
+- Rebuilt the home screen around three distinct modes: **Campaign**, **Scenarios** and **Sandbox**.
+- Campaign begins with three available live-company cases. Founder Scenarios unlock at 3 career stars and Sandbox unlocks at 5.
+- Added twelve campaign cases with the 0 / 3 / 4 / 5 / 6 / 8 / 10 / 12 / 14 / 16-star progression ladder, fixed company states, deadlines, differentiated constraints, authored interruption events and 1–3-star grading.
+- Campaign stars live in a separate career profile and record the best result for each case, so replaying a case can improve progression without erasing earlier success.
+- Added a live case HUD, objective dashboard, requirement progress, submission flow and case-result presentation.
+- Campaign restrictions are enforced by the action layer: cases can prohibit hiring, recruiting, contracts, debt, equity, brand creation or industry entry, and cap facilities, brands or active products.
+- Added a data-driven campaign registry and reusable seed, metric, objective, constraint and event schemas. New industries can supply case data without adding another campaign engine.
+- Save schema 24 adds game-mode and campaign-runtime state while migrating existing companies into Scenarios mode.
+
+## v2.0 — Three-Industry Expansion
+
+- Added Packaged Food, Apparel and Consumer Electronics as complete starting and expansion industries.
+- Added 18 products with distinct need priorities, design facets, materials, manufacturing, storage, regulation, retailers, competitors, lifecycle and category-entry economics.
+- Added the Food Innovation Kitchen, Fashion Atelier and Prototype & Reliability Lab, each with authored isometric campus art and Level II AAA support.
+- Added nine manufacturing partners, seven specialist retailers, industry-specific events and licensing compatibility across the expanded product catalog.
+- Added colorful product art for every new category and industry identity in setup and portfolio screens.
+- Save schema 23 safely initializes new materials and active-industry market runtimes.
+
+## v1.9.1 — Product Reviews & Market Learning
+
+- Product reveals now use a decimal 1.0–5.0 review scale. A projects top out at 2.9,
+  exceptional AA projects can reach 4.1, and 4.8–5.0 is flagship AAA territory.
+- Review score is not a sales score. Segment size, proposition fit, price, IP, awareness and
+  channels still determine volume; a loved niche product can instead use its review to earn
+  modest pricing power with quality-sensitive buyers.
+- Post-launch studies now produce retained, actionable lessons such as “Licensed appeal is
+  underbuilt,” “the audience shops online,” or “this product is over-engineered for a
+  value-sensitive target.” Studies never award a hidden product-quality bonus.
+- Learned lessons remain attached to archived SKUs and reappear in the next design brief,
+  where the player must deliberately change priority stars, IP, team or project class.
+- Save schema 22 migrates existing products to deterministic decimal reviews while preserving
+  all v1.9 portfolio and commercial history.
+
+## v1.9 — Balance, Playability & Replayability
+
+- Campus facilities can now be moved without losing staff or upgrades. Demolition shows
+  its recovery value, asks for confirmation and blocks unsafe removals involving staff,
+  active work or inventory that would no longer fit.
+- Product navigation now separates the current portfolio, live products, pipeline and
+  archive. Finished products can be archived, restored, or cleared at a visible write-off
+  when the company needs to exit a failed SKU.
+- Early product outcomes vary more with talent and priorities. Strong startup designers
+  can create genuinely better A-tier products, while weak propositions remain capable of
+  consuming runway and forcing a recovery plan.
+- The first post-launch study of a SKU records research coverage and a durable diagnosis for
+  future decisions. It never retroactively improves the product already in market.
+- Each company receives a durable run seed. Event order and timing differ by run, financial
+  stakes scale with company size, unexpected audiences can justify a product pivot, and a
+  logistics disruption can change a real inbound batch's delivery time.
+- Difficulty remains the sole source of advertised starting cash. Event pressure changes
+  choices rather than secretly changing market demand or competitor intelligence.
+
+## v1.8 — Premium UI & Feedback Pass
+
+- Replaced the primary emoji navigation with a consistent family of colorful, dimensional
+  game icons across the campus rail and overlay navigation.
+- Added tactile hover, press, focus and selection reactions, richer gradients, animated
+  panels, polished rarity treatments and a reduced-motion accessibility fallback.
+- Major product moments now arrive as cinematic cards. New-product, launch and breakout
+  moments spin a mystery card before revealing the real product, then animate cleanly out.
+- The campus now visualizes active design, production, research, recruiting, training and
+  campaign work through live radial trackers, progress bars and upgraded facility labels.
+- Market Intelligence gained a visual command center with competitive-share donuts,
+  rankings, quarterly share-race lines and revenue/profit momentum charts. All values come
+  from the existing simulation; this release does not invent a second analytics model.
+- Decision events, achievements, overlays and product detail views now use coordinated
+  entrance, resolution and dismissal motion without changing the v1.7 save schema.
+
+## v1.7 — The True Game Pass
+
+- Five founder scenarios now give a run a distinct opening pressure and three visible
+  objectives without restricting the wider sandbox.
+- Eight reusable event families interrupt only for genuine decisions. Every choice shows
+  its immediate trade-off, any delayed consequence, and changes the real simulation state.
+- A persistent decision history, fifteen achievements, six major run outcomes and a legacy
+  score turn each company into a story instead of an interchangeable spreadsheet.
+- Outcomes are chapter endings rather than hard stops: the company always remains playable.
+
+## v1.6 — Lightweight Capital
+
+- The new Capital Desk puts cash, debt, valuation, runway, interest and founder ownership
+  in one compact view.
+- Draw or repay credit, request a growth loan, connect with investors and raise an equity
+  round. Debt adds pressure; equity permanently dilutes the founder.
+
+## v1.5 — Competitive World
+
+- Added a permanent **Competition** command center with segment battles, rival dossiers
+  and a market-news timeline.
+- Rivals now retain a durable strategic memory: launches into your strongholds, defensive
+  marketing and market retreats remain visible in their dossier after the toast is gone.
+- Every quarter closes with a market-position review showing rank, estimated competitive
+  share, movement, the market leader and the strongest mover.
+- Major rival product entries and quarterly reviews pause the simulation with an executive
+  briefing and a direct route into the competitive command center.
+- Segment battles turn the model into decisions: leader, your position, committed products,
+  current situation and a recommended product/price/channel/awareness response.
+
+## v1.4 — Living Campus
+
+- Added **Campus Pulse**, a compact operating view of people, warehouse use, production,
+  active products, product flow and facilities needing attention.
+- Facility labels now distinguish active, ready, idle, blocked, overloaded and attention
+  states using real simulation inputs.
+- Research, marketing, brand, insights, recruiting, production and logistics buildings now
+  surface their live work directly on the map.
+- New construction uses authored-building previews before placement and a short reveal
+  animation after completion. Existing road, plot, landscaping, grounding and mobile
+  bottom-sheet behavior are preserved.
+
+## v1.3 — Product Moments
+
+- Product milestones now interrupt the simulation with a rich, decision-first card rather
+  than disappearing into the event toast: **design complete**, **first batch arrived**,
+  **product launch**, **first market-week review**, **breakout**, and **recall**.
+- The simulation pauses for every product moment. Players can acknowledge it while staying
+  paused or jump directly into the relevant product screen to manufacture, prepare launch,
+  review analysis, or protect a breakout.
+- A newly launched product receives a real first-week commercial review after seven days:
+  units sold, net sales, and initial category share are calculated from the live simulation.
+  Existing saves do not receive stale launch-week alerts.
+
+## v1.1 — Founder Loop & Company Roadmap
+
+- Founder Goals now start with a compact **First Revenue Plan**, so the first
+  satisfying outcome is a launched product earning from customers rather than
+  merely completing a construction checklist.
+- Product launch includes a commercial-readiness panel for inventory, route to
+  market, Marketing ownership and price fit. The company’s first launch receives
+  a small fit-weighted founder-discovery push, avoiding an opaque zero-awareness
+  start while retaining all product-market-fit and channel constraints.
+- **Company → Roadmap** turns the requirements for AA, recruiting, owned
+  manufacturing and AAA work into linked, actionable dependency cards.
+
 ## Run locally
 
 ```bash
@@ -35,6 +171,7 @@ The same production bundle is therefore portable across repository names and loc
 ```
 src/
   engine/        pure simulation (no React) — testable in isolation
+    campaign.ts    case registry, live-company seeds, constraints, objectives, events, stars
     types.ts       domain types
     industries.ts  configs, axes, channels, helpers
     cube.ts        population, fit (+ product natural lean), drift & shocks
@@ -46,6 +183,7 @@ src/
 ```
 
 The engine is deliberately free of React so it can be unit-tested and reused.
+See `docs/V2_1_CAMPAIGN.md` for the case-authoring contract and extension checklist.
 
 ## Current state (v1.0.4 · Research & Capability Tree)
 
@@ -100,7 +238,7 @@ v1.0.4 turns company growth into explicit capability progression. Cash and headc
 v1.0.3 connects product ambition directly to people, development time and physical office scale.
 
 - Added **A / AA / AAA product projects**.
-  - **A**: one Product Designer, ~35 base development days, limited 1–2★ design ceiling and 13 priority points.
+  - **A**: one Product Designer, ~35 base development days, up to a credible 3★ design with excellent talent/priorities, and 13 priority points.
   - **AA**: one Product Lead + one Product Designer, ~80 base days, strong 3–4★ potential and 18 priority points.
   - **AAA**: one Product Lead + three Product Designers, ~150 base days, 5★ / market-leading design potential and 23 priority points.
 - Product staff assigned to an active design are locked to that project until development completes. Large projects therefore consume real organizational capacity rather than acting as a cash-only upgrade.

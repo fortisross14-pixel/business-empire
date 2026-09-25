@@ -44,11 +44,11 @@ export function FinancialsView({ world, hist, borrow, repay }:
 
       {/* Tier 1+: Sales by SKU */}
       <Panel title="Sales by SKU">
-        {world.player.skus.length === 0 ? <div style={{ color: C.faint }}>No products yet.</div> :
+        {world.player.skus.every((s) => s.archived) ? <div style={{ color: C.faint }}>No current products. Archived commercial history remains available in the product archive and company records.</div> :
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead><tr style={{ color: C.dim, textAlign: "right" }}><th style={{ textAlign: "left", padding: "6px 4px" }}>SKU</th><th>List</th><th>Cost</th><th>Inventory</th><th>Units/day</th><th>Units/Q</th><th>Net Rev</th><th>Contribution</th></tr></thead>
             <tbody style={{ fontFamily: "ui-monospace" }}>
-              {world.player.skus.map((s, i) => {
+              {world.player.skus.map((s, i) => ({s,i})).filter(({s}) => !s.archived).map(({s,i}) => {
                 const r = live.skuResults[i] || ({} as any);
                 const out = (r.inventory ?? s.inventory) < 1;
                 return (

@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback } from "react";
-import type { World, Brand, Coord, DifficultyId, BrandVisualRecipe, TalentSearchMode, ResearchNodeId } from "../engine/types";
+import type { World, Brand, Coord, DifficultyId, BrandVisualRecipe, TalentSearchMode, ResearchNodeId, ScenarioId, InvestorType, GameMode, CampaignAction } from "../engine/types";
 import { type PersonnelRole } from "../engine/types";
 import { RETAIL_PARTNERS, MARKETING_AGENCIES, BRAND_COLORS, INDUSTRIES } from "../engine/industries";
 import { initWorld, buildSku, STUDY_DEFS, type ProductSpec } from "../engine/world";
@@ -7,8 +7,8 @@ import { step } from "../engine/tick";
 import { launchInheritance } from "../engine/brandEquity";
 import { deriveUnitCost, deriveQuality } from "../engine/economics";
 import { manufacturingStandard } from "../engine/productDesign";
-import { canCreateProduct, canProduce, productionLeadDays, productProjectLockedPeople, productProjectTierAccess } from "../engine/capacity";
-import { CAMPUS_PATH_COST, canBuildCampusPath, facilityBuildRequirement, facilityUpgradeQuote, facilityUpgradeRequirement, productCenterTypeForIndustry, roleFitsRoom, roomSupportsProductDesign, roomTouchesConnectedPath, sanitizeOperatingRooms, syncDerivedDepartments, storageModuleRequirement, WAREHOUSE_MODULE_COST } from "../engine/infrastructure";
+import { canCreateProduct, canDemolishFacility, canProduce, productionLeadDays, productProjectLockedPeople, productProjectTierAccess } from "../engine/capacity";
+import { CAMPUS_PATH_COST, canBuildCampusPath, facilityBuildRequirement, facilityDemolitionRefund, facilityFootprintForLevel, facilityMoveCost, facilityUpgradeQuote, facilityUpgradeRequirement, productCenterTypeForIndustry, roleFitsRoom, roomFacilityType, roomSupportsProductDesign, roomTouchesConnectedPath, sanitizeOperatingRooms, syncDerivedDepartments, storageModuleRequirement, WAREHOUSE_MODULE_COST } from "../engine/infrastructure";
 import { hasAutosave, loadWorld, saveWorld, clearAutosave } from "../engine/persistence";
 import { supplierById, supplierSupportsProduct, suppliersForProduct } from "../engine/suppliers";
 import { canNegotiatePartner, deriveSkuChannels, partnerSupportsIndustry } from "../engine/distribution";
@@ -21,9 +21,12 @@ import { archetypeByKey, type StorageProfileId } from "../engine/productCatalog"
 import { ensureIndustryMarket, marketWorldView, commitMarketView } from "../engine/markets";
 import { deriveSafetyScore, TESTING_LEVELS } from "../engine/productDynamics";
 import { createOriginalIP, setSkuIP, signIPLicense } from "../engine/ip";
-import { difficultyConfig } from "../engine/difficulty";
+import { connectInvestor as connectCapitalInvestor, drawCredit, raiseEquity, requestGrowthLoan as requestCapitalLoan } from "../engine/capital";
+import { resolveDecision as resolveGameplayDecision } from "../engine/gameplay";
 import { canManageSegments, segmentTargetProfile } from "../engine/segments";
 import { hasResearch, startResearch as beginResearch } from "../engine/research";
+import { effectiveTarget, fit } from "../engine/cube";
+import { CAMPAIGN_CASE_BY_ID, campaignConstraintReason, completeCampaignCase, createCampaignWorld, loadCampaignProfile, SANDBOX_UNLOCK_STARS, SCENARIOS_UNLOCK_STARS } from "../engine/campaign";
 
 const fmtLaunchPrice = (v: number) => `$${Math.round(v * 100) / 100}`;
 
@@ -31,11 +34,18 @@ export function useGame() {
   const worldRef = useRef<World | null>(null);
   const [, force] = useState(0);
   const rerender = useCallback(() => force((x) => x + 1), []);
-  const [phase, setPhase] = useState<"home" | "setup" | "play">("home");
+  const [phase, setPhase] = useState<"home" | "campaign" | "setup" | "sandbox" | "play">("home");
   const [playing, setPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [modal, setModal] = useState<null | "creator" | "contract">(null);
   const [autosaveAvailable, setAutosaveAvailable] = useState(() => hasAutosave());
+  const [campaignProfile, setCampaignProfile] = useState(() => loadCampaignProfile());
+
+  const blockCampaignAction = (w: World, action: CampaignAction) => {
+    const reason = campaignConstraintReason(w, action);
+    if (reason) w.events.push({ tick: w.tick, kind: "campaign", text: `🔒 ${reason}` });
+    return reason;
+  };
 
   useEffect(() => {
     if (phase !== "play") return;
@@ -77,12 +87,18 @@ export function useGame() {
     rerender();
   }, [rerender]);
 
-  const newGame = useCallback(() => {
+  const openMode = useCallback((mode: GameMode) => {
+    const profile = loadCampaignProfile();
+    setCampaignProfile(profile);
+    if (mode === "scenario" && profile.totalStars < SCENARIOS_UNLOCK_STARS) return;
+    if (mode === "sandbox" && profile.totalStars < SANDBOX_UNLOCK_STARS) return;
     clearAutosave();
     setAutosaveAvailable(false);
     worldRef.current = null;
-    setPhase("setup");
+    setPhase(mode === "campaign" ? "campaign" : mode === "scenario" ? "setup" : "sandbox");
   }, []);
+
+  const goHome = useCallback(() => { setCampaignProfile(loadCampaignProfile()); setPhase("home"); }, []);
 
   const saveNow = useCallback(() => {
     if (!worldRef.current) return;
@@ -90,9 +106,34 @@ export function useGame() {
     setAutosaveAvailable(true);
   }, []);
 
-  const launch = useCallback((industryId: string, company: string, difficulty: DifficultyId) => {
-    worldRef.current = initWorld(industryId, company, null, difficulty);
+  const launch = useCallback((industryId: string, company: string, difficulty: DifficultyId, scenarioId: ScenarioId) => {
+    worldRef.current = initWorld(industryId, company, null, difficulty, scenarioId);
+    worldRef.current.mode = "scenario";
     setPhase("play"); rerender();
+  }, [rerender]);
+
+  const launchSandbox = useCallback((industryId: string, company: string, startingCash: number) => {
+    worldRef.current = initWorld(industryId, company, null, "bootstrap", "bootstrap_brand");
+    worldRef.current.mode = "sandbox";
+    worldRef.current.player.cash = Math.max(100_000, startingCash);
+    worldRef.current.chronicle.yearAccumulator.startCash = worldRef.current.player.cash;
+    setPhase("play"); rerender();
+  }, [rerender]);
+
+  const launchCampaignCase = useCallback((caseId: string) => {
+    const profile = loadCampaignProfile();
+    const def = CAMPAIGN_CASE_BY_ID[caseId];
+    if (!def || profile.totalStars < def.unlockStars) return;
+    clearAutosave(); setAutosaveAvailable(false);
+    worldRef.current = createCampaignWorld(caseId);
+    setPhase("play"); setPlaying(false); rerender();
+  }, [rerender]);
+
+  const finishCampaignCase = useCallback(() => {
+    if (!worldRef.current?.campaign) return { stars: 0, profile: loadCampaignProfile() };
+    const result = completeCampaignCase(worldRef.current);
+    setCampaignProfile(result.profile); setPlaying(false); saveWorld(worldRef.current); setAutosaveAvailable(true); rerender();
+    return result;
   }, [rerender]);
 
   const createProduct = useCallback((spec: ProductSpec) => {
@@ -246,6 +287,8 @@ export function useGame() {
 
   const releaseProduct = useCallback((si: number, segmentId: string, launchBudget = 0) => {
     const w = worldRef.current!; const s = w.player.skus[si];
+    const campaignBlock = blockCampaignAction(w, "activate_product");
+    if (campaignBlock) { rerender(); return { ok: false, reason: campaignBlock }; }
     if (!s || s.status !== "active" || s.releasedToMarket === true || s.inventory <= 0) return { ok: false, reason: "The first batch must be in the warehouse before launch." };
     if (s.listPrice <= 0) return { ok: false, reason: "Set a selling price first." };
     if (!(s.assignedPartnerIds ?? []).length) return { ok: false, reason: "Assign at least one sales channel before launch." };
@@ -257,11 +300,18 @@ export function useGame() {
     if (campaignCost > w.player.cash) return { ok: false, reason: "Not enough cash for the selected launch advertising." };
     s.target = segment ? segmentTargetProfile(marketWorldView(w, s.industryId), segment.filter) : { gender: .5, age: .5, class: .5, leaning: .5, geography: .5, family: .5 };
     s.targetLabel = segment?.name ?? "Broad market";
+    const firstCompanyLaunch = !w.player.skus.some((other) => other.id !== s.id && other.releasedToMarket);
     s.releasedToMarket = true; s.launchTick = w.tick;
     const marketView = marketWorldView(w, s.industryId);
+    const productType = (INDUSTRIES[s.industryId] ?? w.cfg).products.find((product) => product.key === s.productKey);
+    const effective = effectiveTarget(s.target, productType);
     for (let ci = 0; ci < marketView.cube.length; ci++) {
       const inherit = launchInheritance(marketView, ci, s.productKey, s.brandId);
-      if (inherit > 0.01) marketView.cube[ci].awareness[s.id] = Math.max(marketView.cube[ci].awareness[s.id] ?? 0, inherit);
+      // A first product cannot inherit portfolio awareness. Its founder-led discovery push
+      // prevents an otherwise well-prepared commercial launch from beginning at zero demand.
+      // Product and channel fit still determine whether discovery turns into sales.
+      const founderDiscovery = firstCompanyLaunch ? 0.025 + fit(effective, marketView.cube[ci], marketView.cfg) * 0.065 : 0;
+      marketView.cube[ci].awareness[s.id] = Math.max(marketView.cube[ci].awareness[s.id] ?? 0, inherit, founderDiscovery);
     }
     commitMarketView(w, marketView);
     deriveSkuChannels(w, s);
@@ -273,6 +323,7 @@ export function useGame() {
     if (lead) lead.careerEvents.push({ tick: w.tick, kind: "milestone", text: `Launched ${s.name}.` });
     recordProductLaunch(w, s);
     w.events.push({ tick: w.tick, kind: "product", text: `🚀 ${s.name} is now on the market at ${fmtLaunchPrice(s.listPrice)} for ${s.targetLabel}.` });
+    if (firstCompanyLaunch) w.events.push({ tick: w.tick, kind: "market", text: `📣 Founder launch support is introducing ${s.name} to its best-fit first customers.` });
     const market = ensureIndustryMarket(w, s.industryId); market.fitCacheDirty = true;
     if (s.industryId === w.industryId) w.fitCacheDirty = true;
     rerender(); return { ok: true };
@@ -285,6 +336,41 @@ export function useGame() {
     for (const room of w.player.operatingRooms) if (room.skuId === s.id) room.skuId = null;
     w.events.push({ tick: w.tick, kind: "product", text: `🗑 ${s.name} was discarded before launch.` });
     rerender(); return true;
+  }, [rerender]);
+
+  const setProductArchived = useCallback((si: number, archived: boolean, liquidate = false) => {
+    const w = worldRef.current!; const s = w.player.skus[si];
+    if (!s) return { ok: false, reason: "Product not found." };
+    if (!archived) {
+      const campaignBlock = blockCampaignAction(w, "activate_product");
+      if (campaignBlock) { rerender(); return { ok: false, reason: campaignBlock }; }
+      s.archived = false;
+      s.archivedTick = undefined;
+      s.releasedToMarket = s.archivedWasReleased ?? false;
+      s.archivedWasReleased = undefined;
+      w.events.push({ tick: w.tick, kind: "product", text: `↩ ${s.name} returned to the active portfolio.` });
+      w.fitCacheDirty = true; rerender();
+      return { ok: true, reason: "" };
+    }
+    if (s.status === "designing") return { ok: false, reason: "Finish or discard the active design project before archiving it." };
+    if ((s.mfgBatchSize ?? 0) > 0 || s.status === "manufacturing") return { ok: false, reason: "A batch is still in production. Wait for it to arrive before archiving." };
+    if (s.inventory > 0 && !liquidate) return { ok: false, reason: `Clear ${Math.round(s.inventory).toLocaleString()} units of inventory first.` };
+    let recovery = 0;
+    if (s.inventory > 0 && liquidate) {
+      recovery = Math.round(s.inventory * s.unitCost * .25);
+      w.player.cash += recovery;
+      s.inventory = 0;
+      s.inventoryLots = [];
+    }
+    s.archivedWasReleased = Boolean(s.releasedToMarket);
+    s.releasedToMarket = false;
+    s.archived = true;
+    s.archivedTick = w.tick;
+    w.activeCampaigns = w.activeCampaigns.filter((campaign) => campaign.scope !== s.id);
+    for (const room of w.player.operatingRooms) if (room.skuId === s.id) room.skuId = null;
+    w.events.push({ tick: w.tick, kind: "product", text: `📁 ${s.name} archived${recovery ? ` after a clearance recovery of ${recovery.toLocaleString()}` : ""}.` });
+    w.fitCacheDirty = true; rerender();
+    return { ok: true, reason: "", recovery };
   }, [rerender]);
 
   const setIP = useCallback((si: number, ipId: string | null) => {
@@ -309,6 +395,7 @@ export function useGame() {
   }, [rerender]);
   const signContract = useCallback((partnerId: string) => {
     const w = worldRef.current!;
+    if (blockCampaignAction(w, "sign_contract")) { rerender(); return; }
     if (!canNegotiatePartner(w, partnerId)) return;
     const partner = RETAIL_PARTNERS.find((p) => p.id === partnerId);
     if (!partner) return;
@@ -324,6 +411,7 @@ export function useGame() {
   }, [rerender]);
   const removeContract = useCallback((i: number) => {
     const w = worldRef.current!;
+    if (blockCampaignAction(w, "remove_contract")) { rerender(); return; }
     const removed = w.player.contracts[i];
     w.player.contracts.splice(i, 1);
     if (removed) for (const sku of w.player.skus) {
@@ -339,6 +427,8 @@ export function useGame() {
   const setBackOffice = useCallback((v: number) => { worldRef.current!.player.backOfficeTarget = v; rerender(); }, [rerender]);
   const hireCandidate = useCallback((candidateId: string, roomId: string) => {
     const w = worldRef.current!;
+    const campaignBlock = blockCampaignAction(w, "hire");
+    if (campaignBlock) { rerender(); return { ok: false, reason: campaignBlock }; }
     const candidate = w.player.talentMarket.find((c) => c.id === candidateId);
     if (!candidate) return { ok: false, reason: "Candidate is no longer available." };
     const room = w.player.operatingRooms.find((r) => r.id === roomId && r.kind === "office");
@@ -358,6 +448,8 @@ export function useGame() {
   }, [rerender]);
   const startRecruitingSearch = useCallback((role: PersonnelRole, industryId: string, mode: TalentSearchMode) => {
     const w = worldRef.current!;
+    const campaignBlock = blockCampaignAction(w, "recruit");
+    if (campaignBlock) { rerender(); return { ok: false as const, reason: campaignBlock }; }
     const result = startTalentSearch(w, role, industryId, mode);
     if (result.ok) {
       w.events.push({ tick: w.tick, kind: "people", text: `🔎 Recruiting agency engaged — ${mode} search started.` });
@@ -394,6 +486,7 @@ export function useGame() {
 
   const createBrand = useCallback((name: string, color: string, positioning: string, industryId?: string, visual?: BrandVisualRecipe) => {
     const w = worldRef.current!;
+    if (blockCampaignAction(w, "create_brand")) { rerender(); return false; }
     const clean = name.trim();
     if (!clean || w.brands.some((b) => b.name.toLowerCase() === clean.toLowerCase())) return false;
     const check = canCreateBrand(w);
@@ -445,6 +538,7 @@ export function useGame() {
 
   const startIndustryEntry = useCallback((industryId: string) => {
     const w = worldRef.current!;
+    if (blockCampaignAction(w, "enter_industry")) { rerender(); return false; }
     const check = canStartIndustryEntry(w, industryId);
     if (!check.ok || !check.def) return false;
     w.player.cash -= check.def.investment;
@@ -501,15 +595,16 @@ export function useGame() {
   const selectCell = useCallback((coord: Coord) => { worldRef.current!.selectedCell = coord; rerender(); }, [rerender]);
   const borrow = useCallback((amount: number) => {
     const w = worldRef.current!;
-    const d = difficultyConfig(w.difficulty);
-    const baseLimit = w.difficulty === "entrepreneur" ? 4_000_000 : w.difficulty === "standard" ? 2_000_000 : 500_000;
-    const confidenceMult = d.investorExpectations > 0 ? (0.35 + w.investorConfidence * 0.65) : 1;
-    const limit = baseLimit * confidenceMult;
-    const draw = Math.max(0, Math.min(amount, limit - w.player.debt));
-    if (draw <= 0) { w.events.push({ tick: w.tick, kind: "finance", text: "Credit request denied — available financing is exhausted." }); rerender(); return; }
-    w.player.cash += draw; w.player.debt += draw; rerender();
+    if (blockCampaignAction(w, "borrow")) { rerender(); return; }
+    const result = drawCredit(w, amount);
+    if (!result.ok) w.events.push({ tick: w.tick, kind: "finance", text: result.reason });
+    rerender();
   }, [rerender]);
   const repay = useCallback((amount: number) => { const w = worldRef.current!; const a = Math.min(amount, w.player.debt, Math.max(0, w.player.cash)); w.player.cash -= a; w.player.debt -= a; rerender(); }, [rerender]);
+  const connectInvestor = useCallback((type: InvestorType) => { const result = connectCapitalInvestor(worldRef.current!, type); rerender(); return result; }, [rerender]);
+  const requestGrowthLoan = useCallback((amount: number) => { const w=worldRef.current!; const reason=blockCampaignAction(w,"borrow"); if(reason){rerender();return {ok:false as const,reason};} const result = requestCapitalLoan(w, amount); rerender(); return result; }, [rerender]);
+  const raiseCapital = useCallback((investorId: string, amount: number) => { const w=worldRef.current!; const reason=blockCampaignAction(w,"raise_capital"); if(reason){rerender();return {ok:false as const,reason};} const result = raiseEquity(w, investorId, amount); rerender(); return result; }, [rerender]);
+  const resolveDecision = useCallback((choiceId: string) => { const result = resolveGameplayDecision(worldRef.current!, choiceId); rerender(); return result; }, [rerender]);
 
   const startResearch = useCallback((nodeId: ResearchNodeId) => {
     const w = worldRef.current!;
@@ -518,17 +613,17 @@ export function useGame() {
     return result;
   }, [rerender]);
 
-  const commission = useCallback((type: string) => {
+  const commission = useCallback((type: string, skuId?: string) => {
     const w = worldRef.current!;
     if (type !== "product_diagnosis") {
       if (!hasResearch(w, "market_intelligence")) return;
       if (teamEffectiveness(w, "strategy") <= 0) return;
     }
-    if (w.studies.find((s) => s.type === type && !s.done)) return;
+    if (w.studies.find((s) => s.type === type && s.skuId === skuId && !s.done)) return;
     const def = STUDY_DEFS[type]; if (!def || w.player.cash < def.cost) return;
     w.player.cash -= def.cost;
-    w.studies = w.studies.filter((s) => s.type !== type);
-    w.studies.push({ type, ticksLeft: STUDY_DEFS[type].ticks, done: false });
+    w.studies = w.studies.filter((s) => s.type !== type || s.skuId !== skuId);
+    w.studies.push({ type, ticksLeft: STUDY_DEFS[type].ticks, done: false, skuId });
     rerender();
   }, [rerender]);
 
@@ -541,6 +636,7 @@ export function useGame() {
 
   const buildOperatingRoom = useCallback((incoming: World["player"]["operatingRooms"][number]) => {
     const w = worldRef.current!;
+    if (blockCampaignAction(w, "build_facility")) { rerender(); return false; }
     const facilityType = incoming.facilityType ?? (incoming.kind as any);
     const gate = facilityBuildRequirement(w, facilityType);
     if (gate) return false;
@@ -628,7 +724,7 @@ export function useGame() {
     return { ok: true, reason: "" };
   }, [rerender]);
 
-  const upgradeOperatingRoom = useCallback((roomId: string) => {
+  const upgradeOperatingRoom = useCallback((roomId: string, placement?: { x: number; y: number; w: number; h: number }) => {
     const w = worldRef.current!;
     const room = w.player.operatingRooms.find((r) => r.id === roomId);
     if (!room) return { ok: false, reason: "Facility not found." };
@@ -636,15 +732,50 @@ export function useGame() {
     if (!quote) return { ok: false, reason: "This facility is already at maximum capacity." };
     const upgradeGate = facilityUpgradeRequirement(w, room, quote.nextLevel); if (upgradeGate) return { ok: false, reason: upgradeGate };
     if (w.player.cash < quote.cost) return { ok: false, reason: "Not enough cash for this upgrade." };
+
+    const type = roomFacilityType(room);
+    const [nextW, nextH] = facilityFootprintForLevel(type, quote.nextLevel, room);
+    const footprintChanges = nextW !== room.w || nextH !== room.h;
+    const target = placement ?? { x: room.x, y: room.y, w: nextW, h: nextH };
+    if (target.w !== nextW || target.h !== nextH) return { ok: false, reason: `Expansion requires a ${nextW}×${nextH} footprint.` };
+    if (footprintChanges && !placement) return { ok: false, reason: `Choose the new ${nextW}×${nextH} footprint on the campus first.` };
+    if (target.x < 0 || target.y < 0 || target.x + target.w > 48 || target.y + target.h > 48) return { ok: false, reason: "The expanded facility must stay inside the campus." };
+    const overlapsOther = w.player.operatingRooms.some((other) => other.id !== room.id && target.x < other.x + other.w && target.x + target.w > other.x && target.y < other.y + other.h && target.y + target.h > other.y);
+    if (overlapsOther) return { ok: false, reason: "The expanded footprint overlaps another facility." };
+    const coversPath = (w.player.campusPaths ?? []).some((p) => p.x >= target.x && p.x < target.x + target.w && p.y >= target.y && p.y < target.y + target.h);
+    if (coversPath) return { ok: false, reason: "The expanded building cannot cover an existing path." };
+    if (!roomTouchesConnectedPath(w, target)) return { ok: false, reason: "The expanded facility must touch the connected campus path network." };
+
     w.player.cash -= quote.cost;
+    room.x = target.x; room.y = target.y; room.w = target.w; room.h = target.h;
     room.capacity += quote.capacityGain;
     room.monthlyCost += quote.monthlyCostGain;
     room.upgradeLevel = quote.nextLevel;
     syncDerivedDepartments(w);
-    w.events.push({ tick: w.tick, kind: "operations", text: `🏗 ${room.name} expanded to level ${quote.nextLevel}.` });
-    recordChronicle(w, { kind: "operations", importance: 1, title: `${room.name} expanded`, text: `${room.name} reached facility level ${quote.nextLevel}, adding ${quote.capacityGain.toLocaleString()} capacity.`, icon: "🏗", entityType: "building", entityId: room.id, tags: ["operations", "building", "upgrade"] });
+    w.events.push({ tick: w.tick, kind: "operations", text: `🏗 ${room.name} expanded to level ${quote.nextLevel} · ${nextW}×${nextH} footprint.` });
+    recordChronicle(w, { kind: "operations", importance: 1, title: `${room.name} expanded`, text: `${room.name} reached facility level ${quote.nextLevel}, expanded to ${nextW}×${nextH} tiles and added ${quote.capacityGain.toLocaleString()} capacity.`, icon: "🏗", entityType: "building", entityId: room.id, tags: ["operations", "building", "upgrade"] });
     rerender();
     return { ok: true };
+  }, [rerender]);
+
+  const moveOperatingRoom = useCallback((roomId: string, placement: { x: number; y: number; w: number; h: number }) => {
+    const w = worldRef.current!;
+    const room = w.player.operatingRooms.find((candidate) => candidate.id === roomId);
+    if (!room) return { ok: false, reason: "Facility not found." };
+    if (placement.w !== room.w || placement.h !== room.h) return { ok: false, reason: `Moving keeps the current ${room.w}×${room.h} footprint.` };
+    if (placement.x === room.x && placement.y === room.y) return { ok: false, reason: "Choose a different campus parcel." };
+    if (placement.x < 0 || placement.y < 0 || placement.x + placement.w > 48 || placement.y + placement.h > 48) return { ok: false, reason: "The moved facility must stay inside the campus." };
+    if (w.player.operatingRooms.some((other) => other.id !== room.id && placement.x < other.x + other.w && placement.x + placement.w > other.x && placement.y < other.y + other.h && placement.y + placement.h > other.y)) return { ok: false, reason: "That parcel overlaps another facility." };
+    if ((w.player.campusPaths ?? []).some((path) => path.x >= placement.x && path.x < placement.x + placement.w && path.y >= placement.y && path.y < placement.y + placement.h)) return { ok: false, reason: "Buildings cannot cover an existing path." };
+    if (!roomTouchesConnectedPath(w, placement)) return { ok: false, reason: "The moved facility must touch the connected campus path network." };
+    const cost = facilityMoveCost(room);
+    if (w.player.cash < cost) return { ok: false, reason: `Need ${cost.toLocaleString()} cash to move this facility.` };
+    w.player.cash -= cost;
+    room.x = placement.x; room.y = placement.y;
+    w.events.push({ tick: w.tick, kind: "operations", text: `↔ ${room.name} moved to a new campus parcel for ${cost.toLocaleString()}.` });
+    recordChronicle(w, { kind: "operations", importance: 1, title: `${room.name} relocated`, text: `${room.name} moved without losing its upgrades, staff or operating mandate.`, icon: "↔", entityType: "building", entityId: room.id, tags: ["operations", "building", "move"] });
+    rerender();
+    return { ok: true, reason: "" };
   }, [rerender]);
 
   const trainPersonnel = useCallback((personnelId: string) => {
@@ -656,20 +787,28 @@ export function useGame() {
 
   const demolishOperatingRoom = useCallback((roomId: string) => {
     const w = worldRef.current!;
+    const campaignBlock = blockCampaignAction(w, "demolish_facility");
+    if (campaignBlock) { rerender(); return { ok: false, reason: campaignBlock }; }
     const room = w.player.operatingRooms.find((r) => r.id === roomId);
-    if (!room || room.id === "founder-office") return;
-    w.player.cash += Math.round(room.buildCost * 0.25);
+    if (!room) return { ok: false, reason: "Facility not found." };
+    const check = canDemolishFacility(w, room);
+    if (!check.ok) return check;
+    const refund = facilityDemolitionRefund(room);
+    w.player.cash += refund;
     w.player.operatingRooms = sanitizeOperatingRooms(w, w.player.operatingRooms.filter((r) => r.id !== roomId));
     syncDerivedDepartments(w);
+    w.events.push({ tick: w.tick, kind: "operations", text: `♻ ${room.name} demolished · ${refund.toLocaleString()} recovered.` });
     rerender();
+    return { ok: true, reason: "" };
   }, [rerender]);
 
   return {
-    world: worldRef.current, phase, setPhase, playing, setPlaying, speed, setSpeed, modal, setModal, autosaveAvailable, continueAutosave, newGame, saveNow,
+    world: worldRef.current, phase, setPhase, playing, setPlaying, speed, setSpeed, modal, setModal, autosaveAvailable, continueAutosave, saveNow,
+    campaignProfile, openMode, goHome, launchCampaignCase, finishCampaignCase, launchSandbox,
     launch, createProduct, produce, signContract, removeContract, assignPartner,
-    setPackaging, setProductPrice, setProductQuality, setProductionSetup, retargetProduct, releaseProduct, discardProduct, setIP, createIP, licenseIP,
-    setMarketing, setBrandMarketing, setBackOffice, setFocus, selectCell, commission, borrow, repay,
+    setPackaging, setProductPrice, setProductQuality, setProductionSetup, retargetProduct, releaseProduct, discardProduct, setProductArchived, setIP, createIP, licenseIP,
+    setMarketing, setBrandMarketing, setBackOffice, setFocus, selectCell, commission, borrow, repay, connectInvestor, requestGrowthLoan, raiseCapital, resolveDecision,
     saveSegment, deleteSegment, updateSegment, launchCampaign, startResearch,
-    hireCandidate, startRecruitingSearch, promotePersonnel, trainPersonnel, firePersonnel, setVision, createBrand, startCategoryExpansion, startIndustryEntry, updateOperatingRooms, buildOperatingRoom, buildCampusPath, buildCampusPathLine, demolishOperatingRoom, upgradeOperatingRoom, retoolFactory, installWarehouseModule,
+    hireCandidate, startRecruitingSearch, promotePersonnel, trainPersonnel, firePersonnel, setVision, createBrand, startCategoryExpansion, startIndustryEntry, updateOperatingRooms, buildOperatingRoom, buildCampusPath, buildCampusPathLine, moveOperatingRoom, demolishOperatingRoom, upgradeOperatingRoom, retoolFactory, installWarehouseModule,
   };
 }

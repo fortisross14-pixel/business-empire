@@ -1,81 +1,59 @@
 import React, { useState } from "react";
-import { C, bigBtn, ctrlBtn } from "../theme";
-import { Panel, ChoiceCard, Center, FieldLabel, TextInput } from "../components";
-import { INDUSTRIES } from "../../engine/industries";
-import type { DifficultyId } from "../../engine/types";
+import { C, bigBtn, ctrlBtn, fmtMoney } from "../theme";
+import { Panel, ChoiceCard, Center, FieldLabel, TextInput, Slider } from "../components";
+import { INDUSTRIES, INDUSTRY_ICONS } from "../../engine/industries";
+import type { DifficultyId, GameMode, ScenarioId } from "../../engine/types";
 import { DIFFICULTIES } from "../../engine/difficulty";
+import { SCENARIOS } from "../../engine/gameplay";
+import { CAMPAIGN_CASES, type CampaignProfile, isCampaignCaseUnlocked, SANDBOX_UNLOCK_STARS, SCENARIOS_UNLOCK_STARS } from "../../engine/campaign";
 
-export function Home({ onStart, onContinue, canContinue }: { onStart: () => void; onContinue: () => void; canContinue: boolean }) {
-  return (
-    <Center>
-      <div style={{ width: "min(760px, 96vw)", textAlign: "center", background: "linear-gradient(180deg,#10385f 0%,#0a2848 100%)", border: "1px solid rgba(132,200,244,.25)", borderRadius: 24, padding: "clamp(28px,7vw,46px) clamp(18px,6vw,38px) clamp(26px,6vw,40px)", boxShadow: "0 28px 70px rgba(7,35,63,.28), inset 0 1px 0 rgba(255,255,255,.09)", color: "#fff" }}>
-        <div style={{ width: 72, height: 72, borderRadius: 20, margin: "0 auto 16px", display: "grid", placeItems: "center", background: "linear-gradient(145deg,#61c9ff,#2783ce)", border: "1px solid rgba(255,255,255,.35)", boxShadow: "0 10px 24px rgba(0,0,0,.24)", fontWeight: 950, fontSize: 23 }}>BE</div>
-        <div style={{ fontSize: 11, color: "#84d3ff", letterSpacing: 4.5, marginBottom: 8, fontWeight: 850 }}>BUSINESS EMPIRE</div>
-        <h1 style={{ fontSize: "clamp(30px,10vw,42px)", lineHeight: 1.04, margin: "0 0 13px", fontWeight: 900, letterSpacing: -1.4 }}>Build products.<br />Build brands. Build an empire.</h1>
-        <p style={{ color: "#b6cee1", fontSize: 14, lineHeight: 1.65, margin: "0 auto 30px", maxWidth: 610 }}>
-          Start with one company, learn what customers actually want, survive your mistakes and turn the right bets into a portfolio of businesses.
-        </p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-          {canContinue && <button style={{ ...bigBtn, minWidth: 190 }} onClick={onContinue}>▶ Continue company</button>}
-          <button style={{ ...bigBtn, minWidth: 170, background: "rgba(255,255,255,.08)", color: "#e8f5ff", border: "1px solid rgba(150,207,244,.25)", boxShadow: "none" }} onClick={onStart}>{canContinue ? "＋ New company" : "▶ Start company"}</button>
-        </div>
-      </div>
-    </Center>
-  );
+export function Home({ onSelectMode, onContinue, canContinue, profile }: { onSelectMode: (mode: GameMode) => void; onContinue: () => void; canContinue: boolean; profile: CampaignProfile }) {
+  const modes: { id: GameMode; icon: string; name: string; eyebrow: string; desc: string; unlock: number }[] = [
+    { id:"campaign",icon:"🎓",name:"Campaign",eyebrow:"Business school cases",desc:"Take over live companies, solve a focused assignment and earn up to three stars per case.",unlock:0 },
+    { id:"scenario",icon:"🧭",name:"Scenarios",eyebrow:"Founder journeys",desc:"Choose one of five starting identities and build a company from an empty campus.",unlock:SCENARIOS_UNLOCK_STARS },
+    { id:"sandbox",icon:"🏗️",name:"Sandbox",eyebrow:"Build without limits",desc:"Choose an industry, company and starting capital. No assignment, no deadline.",unlock:SANDBOX_UNLOCK_STARS },
+  ];
+  return <Center><div style={{width:"min(1050px,97vw)"}}>
+    <div style={{textAlign:"center",color:"#fff",background:"linear-gradient(135deg,#0b2f53,#155b88 60%,#168de2)",borderRadius:24,padding:"32px 24px",boxShadow:"0 25px 70px rgba(7,35,63,.25)",marginBottom:18}}>
+      <div style={{fontSize:11,color:"#a9ddff",letterSpacing:4.5,fontWeight:900}}>BUSINESS EMPIRE</div>
+      <h1 style={{fontSize:"clamp(30px,7vw,48px)",margin:"8px 0 10px",letterSpacing:-1.8}}>Build products. Build brands. Build an empire.</h1>
+      <p style={{maxWidth:680,margin:"0 auto",color:"#c8deec",lineHeight:1.6}}>Learn the market through consequences, make the trade-offs, and turn a company’s resources into an advantage.</p>
+      <div style={{marginTop:17,display:"flex",gap:9,justifyContent:"center",alignItems:"center",flexWrap:"wrap"}}><span style={{background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.18)",borderRadius:999,padding:"7px 12px",fontWeight:850}}>⭐ {profile.totalStars} career stars</span>{canContinue&&<button style={{...bigBtn,background:"#fff",color:"#104f7a"}} onClick={onContinue}>▶ Continue current company</button>}</div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(245px,1fr))",gap:14}}>{modes.map((mode)=>{const locked=profile.totalStars<mode.unlock;return <button key={mode.id} disabled={locked} onClick={()=>onSelectMode(mode.id)} style={{position:"relative",textAlign:"left",padding:20,minHeight:210,borderRadius:18,border:`1px solid ${locked?C.line:mode.id==="campaign"?C.cyan:"#9fb7c8"}`,background:locked?"linear-gradient(180deg,#eef2f5,#e7edf1)":"linear-gradient(180deg,#fff,#f5faff)",boxShadow:locked?"none":"0 12px 30px rgba(15,56,86,.10)",cursor:locked?"not-allowed":"pointer",color:C.ink,opacity:locked ? .68 : 1}}>
+      <div style={{fontSize:36}}>{mode.icon}</div><div style={{color:C.cyan,fontSize:10,fontWeight:900,letterSpacing:1.3,textTransform:"uppercase",marginTop:12}}>{mode.eyebrow}</div><div style={{fontSize:23,fontWeight:900,marginTop:4}}>{mode.name}</div><p style={{fontSize:12,color:C.dim,lineHeight:1.55,margin:"8px 0 0"}}>{mode.desc}</p>
+      <div style={{position:"absolute",left:20,right:20,bottom:17,color:locked?C.amber:C.green,fontSize:11,fontWeight:850}}>{locked?`🔒 Earn ${mode.unlock} campaign stars to unlock · ${profile.totalStars}/${mode.unlock}`:"Ready to play →"}</div>
+    </button>})}</div>
+  </div></Center>;
 }
 
-export function SetupWizard({ onLaunch }: { onLaunch: (id: string, company: string, difficulty: DifficultyId) => void }) {
-  const [step, setStep] = useState(0);
-  const [industryId, setIndustryId] = useState<string | null>(null);
-  const [company, setCompany] = useState("");
-  const [difficulty, setDifficulty] = useState<DifficultyId>("standard");
+export function CampaignSelect({ profile, onLaunch, onBack }: { profile: CampaignProfile; onLaunch: (caseId:string)=>void; onBack:()=>void }) {
+  const [selectedId,setSelectedId]=useState(CAMPAIGN_CASES.find((item)=>isCampaignCaseUnlocked(item,profile))?.id??CAMPAIGN_CASES[0].id);
+  const selected=CAMPAIGN_CASES.find((item)=>item.id===selectedId)!; const unlocked=isCampaignCaseUnlocked(selected,profile); const best=profile.bestStarsByCase[selected.id]??0;
+  return <Center><div style={{width:"min(1160px,98vw)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:14}}><div><div style={{color:C.cyan,fontSize:10,fontWeight:900,letterSpacing:1.4}}>BUSINESS SCHOOL CAREER</div><h1 style={{margin:"3px 0",color:C.ink}}>Campaign cases</h1><div style={{color:C.dim,fontSize:12}}>Solve live-company assignments. Your best result counts toward unlocks.</div></div><div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:999,padding:"8px 12px",fontWeight:900,color:C.ink}}>⭐ {profile.totalStars}</span><button style={ctrlBtn} onClick={onBack}>← Home</button></div></div>
+    <div style={{display:"grid",gridTemplateColumns:"minmax(380px,1.25fr) minmax(300px,.75fr)",gap:14,alignItems:"start"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:9}}>{CAMPAIGN_CASES.map((item)=>{const open=isCampaignCaseUnlocked(item,profile),earned=profile.bestStarsByCase[item.id]??0;return <button key={item.id} onClick={()=>setSelectedId(item.id)} style={{textAlign:"left",minHeight:142,padding:13,borderRadius:13,border:`1px solid ${selectedId===item.id?C.cyan:C.line}`,background:selectedId===item.id?"#edf8ff":open?"#fff":"#edf1f4",color:C.ink,opacity:open?1:.58,cursor:"pointer"}}><div style={{display:"flex",justifyContent:"space-between",gap:8}}><span style={{fontSize:23}}>{item.icon}</span><span style={{fontSize:9,fontWeight:900,color:open?C.green:C.amber}}>{open?item.difficulty.toUpperCase():`🔒 ${item.unlockStars}★`}</span></div><div style={{fontSize:11,color:C.faint,marginTop:6}}>CASE {String(item.order).padStart(2,"0")}</div><div style={{fontWeight:900,marginTop:2}}>{item.name}</div><div style={{fontSize:10.5,color:C.dim,lineHeight:1.35,marginTop:4}}>{item.subtitle}</div><div style={{marginTop:8,color:C.amber,letterSpacing:1}}>{[1,2,3].map((star)=><span key={star}>{star<=earned?"★":"☆"}</span>)}</div></button>})}</div>
+      <Panel style={{position:"sticky",top:12}}><div style={{display:"flex",justifyContent:"space-between",gap:12}}><div><div style={{fontSize:10,color:C.cyan,fontWeight:900,letterSpacing:1.2}}>CASE {selected.order} · {INDUSTRIES[selected.industryId].label}</div><h2 style={{margin:"5px 0 2px",color:C.ink}}>{selected.icon} {selected.name}</h2><div style={{color:C.dim,fontSize:12}}>{selected.company} · {selected.durationDays} days</div></div><div style={{color:C.amber,fontSize:19,whiteSpace:"nowrap"}}>{[1,2,3].map((star)=><span key={star}>{star<=best?"★":"☆"}</span>)}</div></div>
+        <p style={{color:C.dim,fontSize:12,lineHeight:1.6}}>{selected.brief}</p><div style={{background:"#eef8ff",border:"1px solid #cce9fa",borderRadius:10,padding:11,color:"#285a77",fontSize:11,lineHeight:1.5}}><b>Case lesson:</b> {selected.lesson}</div>
+        {!!selected.constraints.notes?.length&&<div style={{marginTop:12}}><FieldLabel>Rules</FieldLabel>{selected.constraints.notes.map((note)=><div key={note} style={{fontSize:11,color:C.dim,margin:"5px 0"}}>◆ {note}</div>)}</div>}
+        <div style={{marginTop:13}}><FieldLabel>Star grading</FieldLabel>{selected.stars.map((star)=><div key={star.stars} style={{borderTop:`1px solid ${C.grid}`,padding:"8px 0"}}><div style={{fontWeight:850,fontSize:11,color:C.ink}}>{"★".repeat(star.stars)} {star.title}</div><div style={{color:C.dim,fontSize:10.5,lineHeight:1.4,marginTop:3}}>{star.requirements.map((r)=>r.label).join(" · ")}</div></div>)}</div>
+        <button disabled={!unlocked} style={{...bigBtn,width:"100%",marginTop:12,opacity:unlocked?1:.45}} onClick={()=>onLaunch(selected.id)}>{unlocked?`${best?"Replay":"Start"} ${selected.name} →`:`Earn ${selected.unlockStars} total stars to unlock`}</button>
+      </Panel>
+    </div>
+  </div></Center>;
+}
 
-  return (
-    <Center>
-      <div style={{ width: "100%", maxWidth: 640 }}>
-        <div style={{ display: "flex", gap: 6, marginBottom: 24 }}>
-          {["Industry & Difficulty", "Company"].map((_, i) => <div key={i} style={{ flex: 1, height: 4, borderRadius: 2, background: i <= step ? C.cyan : C.line }} />)}
-        </div>
-        {step === 0 && (
-          <Panel title="Choose your industry">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
-              {Object.values(INDUSTRIES).map((ind) => (
-                <ChoiceCard key={ind.id} active={industryId === ind.id} onClick={() => setIndustryId(ind.id)}>
-                  <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>{ind.label}</div>
-                  <div style={{ color: C.dim, fontSize: 12 }}>Matters most: {Object.entries(ind.axisWeight).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => k).join(", ")}</div>
-                </ChoiceCard>
-              ))}
-            </div>
-            <div style={{ marginTop: 18 }}>
-              <FieldLabel>Difficulty</FieldLabel>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
-                {Object.values(DIFFICULTIES).map((d) => (
-                  <ChoiceCard key={d.id} active={difficulty === d.id} onClick={() => setDifficulty(d.id)}>
-                    <div style={{ fontWeight: 800, marginBottom: 4 }}>{d.label}</div>
-                    <div style={{ color: C.green, fontFamily: "ui-monospace", fontSize: 12, marginBottom: 5 }}>${(d.startingCash / 1e6).toFixed(d.startingCash < 1_000_000 ? 2 : 1)}M start</div>
-                    <div style={{ color: C.dim, fontSize: 11, lineHeight: 1.4 }}>{d.description}</div>
-                    <div style={{ color: C.faint, fontSize: 10.5, marginTop: 6 }}>{d.investorExpectations > 0 ? `${d.graceQuarters}Q grace · investor expectations` : "No outside expectations"}</div>
-                  </ChoiceCard>
-                ))}
-              </div>
-            </div>
-            <div style={{ marginTop: 16, textAlign: "right" }}><button style={bigBtn} disabled={!industryId} onClick={() => setStep(1)}>Next →</button></div>
-          </Panel>
-        )}
-        {step === 1 && (
-          <Panel title="Name your company">
-            <FieldLabel>Company name</FieldLabel>
-            <TextInput placeholder="e.g. Meridian Holdings" value={company} onChange={(e) => setCompany(e.target.value)} />
-            <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: C.panel2, border: `1px solid ${C.line}`, color: C.dim, fontSize: 12, lineHeight: 1.55 }}>
-              You are not creating a brand yet. The game begins on an empty lot. Build your first office, then create the brand and logo from inside the company.
-            </div>
-            <div style={{ marginTop: 20, display: "flex", justifyContent: "space-between" }}>
-              <button style={ctrlBtn} onClick={() => setStep(0)}>← Back</button>
-              <button style={bigBtn} disabled={!company.trim()} onClick={() => onLaunch(industryId!, company.trim(), difficulty)}>Start on the empty lot →</button>
-            </div>
-          </Panel>
-        )}
-      </div>
-    </Center>
-  );
+export function SetupWizard({ onLaunch, onBack }: { onLaunch: (id: string, company: string, difficulty: DifficultyId, scenarioId: ScenarioId) => void; onBack:()=>void }) {
+  const [step,setStep]=useState(0),[industryId,setIndustryId]=useState<string|null>(null),[company,setCompany]=useState(""),[difficulty,setDifficulty]=useState<DifficultyId>("standard"),[scenarioId,setScenarioId]=useState<ScenarioId>("bootstrap_brand");
+  return <Center><div style={{width:"100%",maxWidth:720}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><button style={ctrlBtn} onClick={step?()=>setStep(step-1):onBack}>← Back</button><span style={{fontSize:11,color:C.dim}}>FOUNDER SCENARIO · STEP {step+1}/3</span></div><div style={{display:"flex",gap:6,marginBottom:18}}>{[0,1,2].map((i)=><div key={i} style={{flex:1,height:4,borderRadius:2,background:i<=step?C.cyan:C.line}}/>)}</div>
+    {step===0&&<Panel title="Choose your industry and difficulty"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>{Object.values(INDUSTRIES).map((ind)=><ChoiceCard key={ind.id} active={industryId===ind.id} onClick={()=>setIndustryId(ind.id)}><div style={{fontSize:28}}>{INDUSTRY_ICONS[ind.id]??"🏭"}</div><div style={{fontSize:17,fontWeight:800,marginTop:5}}>{ind.label}</div><div style={{color:C.dim,fontSize:11,marginTop:5}}>Matters most: {Object.entries(ind.axisWeight).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([key])=>key).join(", ")}</div></ChoiceCard>)}</div><div style={{marginTop:16}}><FieldLabel>Difficulty</FieldLabel><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:9}}>{Object.values(DIFFICULTIES).map((d)=><ChoiceCard key={d.id} active={difficulty===d.id} onClick={()=>setDifficulty(d.id)}><b>{d.label}</b><div style={{color:C.green,fontSize:11,marginTop:4}}>{fmtMoney(d.startingCash)} start</div><div style={{color:C.dim,fontSize:10.5,lineHeight:1.4,marginTop:4}}>{d.description}</div></ChoiceCard>)}</div></div><div style={{textAlign:"right",marginTop:15}}><button style={bigBtn} disabled={!industryId} onClick={()=>setStep(1)}>Choose scenario →</button></div></Panel>}
+    {step===1&&<Panel title="Choose your founder scenario"><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:10}}>{Object.values(SCENARIOS).map((scenario)=><ChoiceCard key={scenario.id} active={scenarioId===scenario.id} onClick={()=>setScenarioId(scenario.id)}><div style={{fontSize:22}}>{scenario.icon}</div><div style={{fontWeight:850,marginTop:4}}>{scenario.name}</div><div style={{color:C.dim,fontSize:11,lineHeight:1.4,marginTop:5}}>{scenario.pitch}</div><div style={{color:C.amber,fontSize:10.5,marginTop:6}}>{scenario.pressure}</div></ChoiceCard>)}</div><div style={{textAlign:"right",marginTop:15}}><button style={bigBtn} onClick={()=>setStep(2)}>Name the company →</button></div></Panel>}
+    {step===2&&<Panel title="Name your company"><FieldLabel>Company name</FieldLabel><TextInput placeholder="e.g. Meridian Holdings" value={company} onChange={(event)=>setCompany(event.target.value)}/><div style={{marginTop:12,padding:12,borderRadius:10,background:C.panel2,border:`1px solid ${C.line}`,color:C.dim,fontSize:12,lineHeight:1.55}}>You begin on an empty lot. Build the Founder Office, create the brand, then hire into real seats.</div><div style={{textAlign:"right",marginTop:16}}><button style={bigBtn} disabled={!company.trim()} onClick={()=>onLaunch(industryId!,company.trim(),difficulty,scenarioId)}>Start {SCENARIOS[scenarioId].name} →</button></div></Panel>}
+  </div></Center>;
+}
+
+export function SandboxWizard({ onLaunch, onBack }: { onLaunch:(industryId:string,company:string,cash:number)=>void; onBack:()=>void }) {
+  const [industryId,setIndustryId]=useState("skincare"),[company,setCompany]=useState(""),[cash,setCash]=useState(5_000_000);
+  return <Center><div style={{width:"min(760px,96vw)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><button style={ctrlBtn} onClick={onBack}>← Home</button><span style={{color:C.green,fontSize:11,fontWeight:850}}>SANDBOX · NO ASSIGNMENT OR DEADLINE</span></div><Panel title="Create a sandbox company"><FieldLabel>Industry</FieldLabel><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(135px,1fr))",gap:8,marginBottom:18}}>{Object.values(INDUSTRIES).map((industry)=><ChoiceCard key={industry.id} active={industryId===industry.id} onClick={()=>setIndustryId(industry.id)}><div style={{fontSize:24}}>{INDUSTRY_ICONS[industry.id]}</div><b style={{display:"block",marginTop:5}}>{industry.label}</b></ChoiceCard>)}</div><FieldLabel>Company name</FieldLabel><TextInput placeholder="e.g. Meridian Holdings" value={company} onChange={(event)=>setCompany(event.target.value)}/><div style={{marginTop:18}}><Slider label="Starting capital" value={cash} min={100_000} max={50_000_000} step={100_000} onChange={setCash} fmt={fmtMoney}/></div><div style={{display:"flex",gap:7,flexWrap:"wrap",margin:"4px 0 16px"}}>{[500_000,2_000_000,5_000_000,15_000_000,50_000_000].map((amount)=><button key={amount} style={{...ctrlBtn,background:cash===amount?C.cyan:C.panel,color:cash===amount?"#fff":C.dim}} onClick={()=>setCash(amount)}>{fmtMoney(amount)}</button>)}</div><button style={{...bigBtn,width:"100%"}} disabled={!company.trim()} onClick={()=>onLaunch(industryId,company.trim(),cash)}>Open the campus →</button></Panel></div></Center>;
 }

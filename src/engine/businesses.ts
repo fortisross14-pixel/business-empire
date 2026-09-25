@@ -14,11 +14,19 @@ export interface IndustryEntryDef {
 }
 
 export const INDUSTRY_ENTRY_DEFS: Record<string, IndustryEntryDef> = {
+  skincare: {
+    industryId:"skincare",label:"Skincare",investment:5_000_000,days:240,
+    blurb:"Build formulation, claims and beauty-retail capability before developing the first range.",
+    starterCapabilities:{formulation:.8,claims:.45,beauty_retail:.55,manufacturing:.45},
+  },
   toys: {
-    industryId: "toys", label: "Toys", investment: 12_000_000, days: 360,
+    industryId: "toys", label: "Toys", investment: 5_500_000, days: 250,
     blurb: "Build a toy-design team, safety knowledge, retailer relationships and a launch pipeline before the first toy is developed.",
     starterCapabilities: { toy_design: 0.8, safety: 0.5, licensing: 0.2, toy_retail: 0.6, manufacturing: 0.5 },
   },
+  food:{industryId:"food",label:"Packaged Food",investment:4_000_000,days:210,blurb:"Establish food-safety, sensory testing, grocery retail and co-manufacturing capability.",starterCapabilities:{food_design:.75,taste_testing:.55,food_safety:.65,grocery_retail:.55,manufacturing:.45}},
+  apparel:{industryId:"apparel",label:"Apparel",investment:4_500_000,days:220,blurb:"Build fashion design, textile sourcing and seasonal merchandising capability.",starterCapabilities:{fashion_design:.75,textiles:.55,merchandising:.65,apparel_retail:.5,manufacturing:.4}},
+  electronics:{industryId:"electronics",label:"Consumer Electronics",investment:8_000_000,days:300,blurb:"Establish hardware engineering, reliability testing and electronics-channel capability.",starterCapabilities:{industrial_design:.6,electronics:.75,reliability_testing:.55,technology_retail:.5,manufacturing:.4}},
 };
 
 export function primaryBusiness(w: World): IndustryBusiness {

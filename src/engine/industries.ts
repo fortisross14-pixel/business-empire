@@ -26,6 +26,7 @@ export const POSITIONINGS = [
   { key: "luxury", label: "Luxury", blurb: "Exclusive, top quality demanded." },
 ];
 export const BRAND_COLORS = ["#34c3ff", "#a78bfa", "#3fd07f", "#ffb340", "#ff5d6c", "#f472b6", "#22d3ee", "#facc15"];
+export const INDUSTRY_ICONS: Record<string, string> = { skincare:"✨", toys:"🧸", food:"🍱", apparel:"👗", electronics:"🎧" };
 
 // Channels carry payment delays now (Milestone 1: cash != profit)
 export const CHANNEL_TYPES: Record<ChannelType, ChannelDef> = {
@@ -85,6 +86,41 @@ export const INDUSTRIES: Record<string, IndustryConfig> = {
       { key: "social", label: "Social", lean: { age: -0.1 } },
     ],
   },
+  food: {
+    id:"food", label:"Packaged Food", currency:"$",
+    axisWeight:{gender:.08,age:.55,class:.8,leaning:.35,geography:.3,family:.85},
+    spend:{class:{Budget:420,Middle:760,Affluent:1050},gender:{Female:1,Male:.96},age:{"13-24":.8,"25-39":1.2,"40-59":1.1,"60+":.85}},
+    products:productTypesForIndustry("food"), competitors:[
+      {name:"Harvest & Co",target:{gender:.5,age:.55,class:.65,leaning:.25,geography:.5,family:.65},quality:.76,price:8,priceSens:1.05,strength:.78,personality:"premium",attributes:{taste:.72,health:.72,convenience:.55,value:.42,natural:.8,licensed:.1}},
+      {name:"DailyBite",target:{gender:.5,age:.4,class:.32,leaning:.55,geography:.5,family:.55},quality:.66,price:5,priceSens:1.45,strength:.84,personality:"discounter",attributes:{taste:.7,health:.3,convenience:.82,value:.9,natural:.25,licensed:.38}},
+    ], thirdAxisLabel:"Pack & Portion", needs:[
+      {key:"taste",label:"Taste",lean:{age:-.12}},{key:"health",label:"Health",lean:{class:.35,age:.25,leaning:-.25}},
+      {key:"convenience",label:"Convenience",lean:{geography:.25,family:.2,age:-.15}},{key:"value",label:"Value",lean:{class:-.9}},
+      {key:"natural",label:"Natural",lean:{class:.25,leaning:-.5}},{key:"licensed",label:"Licensed / IP",lean:{age:-.55,family:.35}},
+    ],
+  },
+  apparel: {
+    id:"apparel",label:"Apparel",currency:"$",axisWeight:{gender:.25,age:.75,class:1.05,leaning:.28,geography:.35,family:.25},
+    spend:{class:{Budget:380,Middle:820,Affluent:1750},gender:{Female:1.12,Male:.9},age:{"13-24":1.18,"25-39":1.25,"40-59":.92,"60+":.62}},
+    products:productTypesForIndustry("apparel"),competitors:[
+      {name:"Northline",target:{gender:.5,age:.38,class:.55,leaning:.4,geography:.62,family:.4},quality:.73,price:65,priceSens:1.05,strength:.82,personality:"balanced",attributes:{style:.75,comfort:.72,durability:.7,value:.55,sustainability:.48,prestige:.48,licensed:.28}},
+      {name:"Maison Vale",target:{gender:.35,age:.52,class:.88,leaning:.45,geography:.62,family:.35},quality:.84,price:185,priceSens:.7,strength:.7,personality:"premium",attributes:{style:.92,comfort:.58,durability:.72,value:.18,sustainability:.55,prestige:.94,licensed:.15}},
+    ],thirdAxisLabel:"Collection Identity",needs:[
+      {key:"style",label:"Style",lean:{age:-.35,class:.28,geography:.28}},{key:"comfort",label:"Comfort",lean:{age:.22,family:.18}},{key:"durability",label:"Durability",lean:{age:.2,family:.32}},
+      {key:"value",label:"Value",lean:{class:-.88}},{key:"sustainability",label:"Sustainability",lean:{leaning:-.62,class:.2}},{key:"prestige",label:"Luxury / Prestige",lean:{class:.92}},{key:"licensed",label:"Licensed / IP",lean:{age:-.5}},
+    ],
+  },
+  electronics: {
+    id:"electronics",label:"Consumer Electronics",currency:"$",axisWeight:{gender:.16,age:.78,class:.95,leaning:.15,geography:.38,family:.4},
+    spend:{class:{Budget:260,Middle:780,Affluent:1800},gender:{Female:.9,Male:1.08},age:{"13-24":1.05,"25-39":1.35,"40-59":1,"60+":.55}},
+    products:productTypesForIndustry("electronics"),competitors:[
+      {name:"Nexora",target:{gender:.5,age:.35,class:.72,leaning:.45,geography:.62,family:.4},quality:.82,price:190,priceSens:.8,strength:.88,personality:"premium",attributes:{performance:.86,reliability:.78,ease_of_use:.72,design:.88,ecosystem:.9,value:.3,privacy:.55}},
+      {name:"Voltix",target:{gender:.55,age:.32,class:.4,leaning:.5,geography:.55,family:.42},quality:.7,price:95,priceSens:1.25,strength:.77,personality:"discounter",attributes:{performance:.7,reliability:.64,ease_of_use:.68,design:.55,ecosystem:.5,value:.86,privacy:.36}},
+    ],thirdAxisLabel:"Platform / Ecosystem",needs:[
+      {key:"performance",label:"Performance",lean:{age:-.28,class:.25}},{key:"reliability",label:"Reliability",lean:{age:.28,family:.25}},{key:"ease_of_use",label:"Ease of Use",lean:{age:.45}},
+      {key:"design",label:"Design",lean:{age:-.22,class:.38}},{key:"ecosystem",label:"Ecosystem",lean:{class:.22,geography:.2}},{key:"value",label:"Value",lean:{class:-.88}},{key:"privacy",label:"Privacy",lean:{age:.2,family:.35,leaning:.2}},
+    ],
+  },
 };
 
 // Packaging presets (Release: per-product distribution). Each carries:
@@ -118,6 +154,18 @@ export const INDUSTRY_PACKAGING_BIAS: Record<string, Record<string, Record<strin
     colorful: { creative: 1.3, social: 1.1 }, bold: { licensed: 1.2, collectible: 1.1 },
     serious: { educational: 1.3 }, minimal: { educational: 1.15 }, premium: { collectible: 1.3 },
     retro: { collectible: 1.25 }, techy: { educational: 1.15, licensed: 1.1 }, natural: { creative: 1.1 },
+  },
+  food: {
+    bold:{taste:1.18,licensed:1.15},colorful:{taste:1.12,licensed:1.25},minimal:{health:1.15,natural:1.12},serious:{health:1.25},
+    premium:{taste:1.18,natural:1.12},natural:{natural:1.4,health:1.18},retro:{taste:1.1,value:1.08},techy:{convenience:1.25},
+  },
+  apparel: {
+    bold:{style:1.25,licensed:1.12},colorful:{style:1.2,licensed:1.2},minimal:{style:1.12,prestige:1.14},serious:{durability:1.15},
+    premium:{prestige:1.38,style:1.15},natural:{sustainability:1.35,comfort:1.1},retro:{style:1.28},techy:{durability:1.12,style:1.12},
+  },
+  electronics: {
+    bold:{performance:1.16},colorful:{design:1.18,value:1.08},minimal:{design:1.3,ease_of_use:1.12},serious:{reliability:1.25,privacy:1.15},
+    premium:{design:1.22,performance:1.15},natural:{ease_of_use:1.08},retro:{design:1.15},techy:{performance:1.3,ecosystem:1.22},
   },
 };
 export function packagingNeedBias(industryId: string, key: string): Record<string, number> {
@@ -181,6 +229,13 @@ export const RETAIL_PARTNERS: RetailPartner[] = [
     marginCut: 0.42, slotting: 10000, paymentDays: 45, reachMult: 0.45, awarenessBoost: 0.08,
     skew: { class: 0.3, age: 0.2 }, desc: "Dermatology-focused retail. Science-minded buyers.",
     industries: ["skincare"] },
+  { id:"freshbasket",name:"FreshBasket",channelType:"retail",category:"specialty",marginCut:.37,slotting:11000,paymentDays:40,reachMult:.78,awarenessBoost:.06,skew:{family:.45,leaning:-.18},desc:"National grocer with strong family and wellness traffic.",industries:["food"] },
+  { id:"snackstop",name:"SnackStop",channelType:"retail",category:"specialty",marginCut:.34,slotting:7000,paymentDays:28,reachMult:.62,awarenessBoost:.04,skew:{age:-.45,geography:.25},desc:"Convenience chain built for impulse and on-the-go occasions.",industries:["food"] },
+  { id:"stylehouse",name:"StyleHouse",channelType:"retail",category:"specialty",marginCut:.44,slotting:15000,paymentDays:60,reachMult:.68,awarenessBoost:.1,skew:{age:-.2,class:.35,geography:.25},desc:"Fashion-led multi-brand retailer with strong merchandising influence.",industries:["apparel"] },
+  { id:"sportcore",name:"SportCore",channelType:"retail",category:"specialty",marginCut:.4,slotting:12000,paymentDays:50,reachMult:.58,awarenessBoost:.07,skew:{age:-.18,class:.12},desc:"Performance and active-lifestyle specialist.",industries:["apparel"] },
+  { id:"techworld",name:"TechWorld",channelType:"retail",category:"specialty",marginCut:.39,slotting:16000,paymentDays:45,reachMult:.8,awarenessBoost:.09,skew:{age:-.22,class:.25},desc:"National electronics authority with demonstration space and expert staff.",industries:["electronics"] },
+  { id:"gamegrid",name:"GameGrid",channelType:"retail",category:"specialty",marginCut:.36,slotting:9000,paymentDays:35,reachMult:.52,awarenessBoost:.07,skew:{age:-.55,gender:.25},desc:"Enthusiast gaming retailer with a highly engaged audience.",industries:["electronics"] },
+  { id:"hometech",name:"HomeTech",channelType:"retail",category:"specialty",marginCut:.38,slotting:10000,paymentDays:42,reachMult:.5,awarenessBoost:.06,skew:{family:.45,age:.15},desc:"Smart-home specialist trusted for installation-heavy products.",industries:["electronics"] },
 
   // Online Marketplaces
   { id: "megazon", name: "Megazon", channelType: "marketplace", category: "online",

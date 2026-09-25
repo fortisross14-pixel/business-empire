@@ -68,18 +68,14 @@ export function IntelligenceView({ world, commission }: { world: World; commissi
                     {d.verdict === "mismatch" ? "⚠ " : d.verdict === "weak" ? "✕ " : "✓ "}
                   </span>
                   <span style={{ color: C.ink }}>{d.message}</span>
-                  {d.stars && <div style={{ marginTop: 5, display: "flex", gap: 8, flexWrap: "wrap", color: C.dim, fontSize: 10.5 }}>
-                    <span>Product {"★".repeat(d.stars.product)}{"☆".repeat(5-d.stars.product)}</span>
-                    <span>Price {"★".repeat(d.stars.price)}{"☆".repeat(5-d.stars.price)}</span>
-                    <span>Channel {"★".repeat(d.stars.channel)}{"☆".repeat(5-d.stars.channel)}</span>
-                    <span>Brand {"★".repeat(d.stars.brand)}{"☆".repeat(5-d.stars.brand)}</span>
-                    <span>IP {"★".repeat(d.stars.ip)}{"☆".repeat(5-d.stars.ip)}</span>
-                  </div>}
-                  {d.issues?.length > 0 && <div style={{ marginTop: 5, color: C.amber, fontSize: 11 }}>{d.issues.slice(0,2).join(" ")}</div>}
-                  {d.recommendations?.length > 0 && d.stars?.channel <= 3 && <div style={{ marginTop: 4, color: C.cyan, fontSize: 11 }}>Try channels: {d.recommendations.join(", ")}.</div>}
+                  {d.report ? <>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6, color: C.dim, fontSize: 10.5 }}><span>Review <b style={{ color: C.ink }}>★ {d.report.quality.reviewScore.toFixed(1)}</b></span><span>Audience size <b style={{ color: C.ink }}>{Math.round(d.report.targetMarketShare * 100)}%</b></span><span>Best route <b style={{ color: C.ink }}>{d.report.bestChannel.label}</b></span></div>
+                    <div style={{ marginTop: 7, display: "grid", gap: 6 }}>{d.report.lessons.map((lesson: any) => <div key={lesson.id} style={{ padding: 8, borderRadius: 8, border: `1px solid ${C.line}`, background: "white" }}><b style={{ fontSize: 10.8 }}>{lesson.title}</b><div style={{ color: C.dim, fontSize: 10, marginTop: 2 }}>{lesson.finding}</div><div style={{ color: C.green, fontSize: 10, marginTop: 2 }}>Next move: {lesson.action}</div></div>)}</div>
+                    <details style={{ marginTop: 7 }}><summary style={{ color: C.cyan, cursor: "pointer", fontSize: 10.5 }}>Product-review diagnosis</summary><div style={{ color: C.faint, fontSize: 10, marginTop: 4 }}>{d.report.quality.diagnosis.map((reason: string) => <div key={reason}>• {reason}</div>)}</div></details>
+                  </> : <>{d.issues?.length > 0 && <div style={{ marginTop: 5, color: C.amber, fontSize: 11 }}>{d.issues.slice(0,2).join(" ")}</div>}</>}
                 </div>
               ))}
-            <div style={{ color: C.faint, fontSize: 11, marginTop: 8 }}>Studies explain what happened; they do not buff the product. Apply the learning to pricing, channels, brand/IP fit, or your next launch.</div>
+            <div style={{ color: C.faint, fontSize: 11, marginTop: 8 }}>Studies do not rewrite this SKU or award a hidden quality bonus. Findings remain attached to the product and reappear as explicit guidance in the next product brief. Price, channel and audience changes can be applied immediately.</div>
           </Report>
         )}
         {world.revealed.market_report && (

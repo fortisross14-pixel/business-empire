@@ -14,6 +14,7 @@ import { marketWorldView, commitMarketView } from "./markets";
 import { productDemandMultiplier } from "./productDynamics";
 import { ipAwarenessFloor, ipDemandMultiplier } from "./ip";
 import { productMarketFitForCell } from "./productMarketFit";
+import { reviewPricePower } from "./productReview";
 
 export interface SecondaryMarketDemand {
   industryId: string;
@@ -111,15 +112,16 @@ export function simulateSecondaryIndustryMarket(
       if (sku.status !== "active" || sku.releasedToMarket !== true) return 0;
       const base = w.fitCache[sku.id]?.[ci] ?? 0;
       const eqPricePower = pricingPower(w, ci, sku.productKey, sku.brandId);
-      const effPriceSens = cell.priceSens * (1 - eqPricePower);
+      const effPriceSens = cell.priceSens * (1 - clamp(eqPricePower + reviewPricePower(sku, cell), 0, .75));
       const priceTerm = 1 - clamp(sku.listPrice / Math.max(1, refPrice) - 1, -0.65, 1.1) * effPriceSens * 0.45;
       const qualityTerm = 1 - cell.qualitySens + cell.qualitySens * sku.perceivedQuality;
+      const designTerm = .72 + clamp(sku.designQuality, 0, 1) * .56;
       const aware = (cell.awareness[sku.id] ?? 0) * (0.4 + dists[i].reach * 0.6);
       const lifecycle = archetypeByKey(sku.productKey)?.lifecycle;
       const repeatFit = lifecycle ? clamp(0.72 + lifecycle.repeatPurchase * 0.42 + 80 / Math.max(120, lifecycle.purchaseCycleDays) * 0.12, 0.72, 1.22) : 1;
       const commercialFit = productMarketFitForCell(w, sku, cell).overall;
       const commercialConversion = 0.10 + commercialFit * 0.90;
-      return Math.max(0, base * priceTerm * qualityTerm * equityDemandMult(w, ci, cell, sku.productKey, sku.brandId) * aware * productDemandMultiplier(sku, world.tick) * repeatFit * ipDemandMultiplier(w, sku, cell) * commercialConversion);
+      return Math.max(0, base * priceTerm * qualityTerm * designTerm * equityDemandMult(w, ci, cell, sku.productKey, sku.brandId) * aware * productDemandMultiplier(sku, world.tick) * repeatFit * ipDemandMultiplier(w, sku, cell) * commercialConversion);
     });
 
     const compEff = w.comps.map((comp) => {

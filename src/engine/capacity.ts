@@ -1,9 +1,10 @@
-import type { ProductProjectTier, SKU, World } from "./types";
+import type { OperatingRoom, ProductProjectTier, SKU, World } from "./types";
 import { supplierById, supplierSupportsProduct } from "./suppliers";
 import { archetypeByKey, storageProfileForProduct, storageSpaceForProduct, STORAGE_PROFILES } from "./productCatalog";
 import { teamEffectiveness } from "./people";
 import { facilityEffectMultiplier, productCenterLevel, productCenterTypeForIndustry, researchCenterLevel, roleFitsRoom, roomSupportsProductDesign } from "./infrastructure";
 import { hasResearch } from "./research";
+import { INDUSTRIES } from "./industries";
 
 const mapped = (w: World, kind: string) => w.player.operatingRooms.filter((r) => r.kind === kind);
 
@@ -90,6 +91,27 @@ export function inventoryUsedForStorageProfile(w: World, productKey: string): nu
     .reduce((sum, s) => sum + (s.inventory + s.mfgBatchSize) * storageSpaceForProduct(s.productKey), 0);
 }
 
+export function canDemolishFacility(w: World, room: OperatingRoom): { ok: boolean; reason: string } {
+  if (room.id === "founder-office") return { ok: false, reason: "The Founder Office is the campus anchor. Move or expand it instead." };
+  if (room.assignedPersonnelIds.length) return { ok: false, reason: `Reassign ${room.assignedPersonnelIds.length} employee${room.assignedPersonnelIds.length === 1 ? "" : "s"} before demolition.` };
+  if ((w.player.trainingPrograms ?? []).some((program) => program.facilityRoomId === room.id)) return { ok: false, reason: "Finish the active training program before demolition." };
+  if (room.kind === "factory" && w.player.skus.some((sku) => sku.method === "own" && (sku.mfgBatchSize ?? 0) > 0)) return { ok: false, reason: "An owned-production batch is still running. Wait for it to arrive." };
+  if (room.kind === "outsourcing" && w.player.skus.some((sku) => sku.method === "outsource" && (sku.mfgBatchSize ?? 0) > 0)) return { ok: false, reason: "An outsourced batch is still inbound. Wait for it to arrive." };
+  if (room.kind === "warehouse") {
+    const remainingTotal = Math.max(0, warehouseUnitCapacity(w) - room.capacity);
+    if (inventoryUsed(w) > remainingTotal + .001) return { ok: false, reason: "Move or clear inventory first; the remaining warehouses do not have enough total space." };
+    for (const sku of w.player.skus) {
+      const required = storageProfileForProduct(sku.productKey);
+      if (!(room.storageProfiles ?? ["standard"]).includes(required)) continue;
+      const remainingProfile = Math.max(0, warehouseUnitCapacity(w, sku.productKey) - room.capacity);
+      if (inventoryUsedForStorageProfile(w, sku.productKey) > remainingProfile + .001) {
+        return { ok: false, reason: `The remaining warehouses cannot hold ${STORAGE_PROFILES[required]?.label?.toLowerCase() ?? required} inventory.` };
+      }
+    }
+  }
+  return { ok: true, reason: "" };
+}
+
 export function pmAssignments(w: World) {
   const productRooms = w.player.operatingRooms.filter((r) => r.kind === "office" && (r.team === "product" || r.id === "founder-office"));
   const seated = new Set(productRooms.flatMap((r) => r.assignedPersonnelIds));
@@ -112,7 +134,7 @@ export function productProjectTierAccess(w: World, tier: ProductProjectTier, pro
   if (tier === "AAA") {
     if (researchCenterLevel(w) < 2) return { ok: false, reason: "AAA projects require Research Center II." };
     const centerType = productCenterTypeForIndustry(archetype?.industryId);
-    if (centerType && productCenterLevel(w, archetype?.industryId) < 2) return { ok: false, reason: `AAA ${archetype?.industryId === "toys" ? "toy" : "beauty"} products require a Level II specialized design center.` };
+    if (centerType && productCenterLevel(w, archetype?.industryId) < 2) return { ok: false, reason: `AAA ${archetype?.industryId ? (INDUSTRIES[archetype.industryId]?.label ?? archetype.industryId) : "specialist"} products require a Level II specialized design center.` };
     if (!centerType && maxOffice < 16) return { ok: false, reason: "AAA projects require a 16-seat product-capable office or specialized design center." };
   }
   return { ok: true, reason: "" };

@@ -2,9 +2,9 @@ import type { CampusPathTile, DeptTier, FacilityTypeId, OperatingRoom, Operating
 import type { StorageProfileId } from "./productCatalog";
 
 export const OPERATING_ROOM_DEFS = {
-  office: { label: "Office", size: [4, 4] as [number, number], buildCost: 25_000, monthlyCost: 6_000, capacity: 4 },
+  office: { label: "Office", size: [2, 2] as [number, number], buildCost: 25_000, monthlyCost: 6_000, capacity: 4 },
   factory: { label: "Factory", size: [6, 4] as [number, number], buildCost: 200_000, monthlyCost: 18_000, capacity: 100_000 },
-  warehouse: { label: "Warehouse", size: [6, 4] as [number, number], buildCost: 70_000, monthlyCost: 8_000, capacity: 50_000 },
+  warehouse: { label: "Warehouse", size: [3, 3] as [number, number], buildCost: 70_000, monthlyCost: 8_000, capacity: 50_000 },
   outsourcing: { label: "Sourcing Office", size: [3, 2] as [number, number], buildCost: 40_000, monthlyCost: 7_000, capacity: 150_000 },
 } as const;
 
@@ -14,6 +14,7 @@ export interface FacilityDef {
   label: string;
   icon: string;
   size: [number, number];
+  levelSizes?: [number, number][];
   buildCost: number;
   monthlyCost: number;
   capacity: number;
@@ -25,27 +26,31 @@ export interface FacilityDef {
 }
 
 export const FACILITY_DEFS: Record<FacilityTypeId, FacilityDef> = {
-  office: { id: "office", kind: "office", label: "General Office", icon: "🏢", size: [4,4], buildCost: 25_000, monthlyCost: 6_000, capacity: 4, team: "unassigned", repeatable: true, maxLevel: 3, group: "Core", description: "Flexible office space. The first one becomes the Founder Office." },
-  beauty_center: { id: "beauty_center", kind: "office", label: "Beauty Center", icon: "✨", size: [4,4], buildCost: 140_000, monthlyCost: 14_000, capacity: 4, team: "product", repeatable: true, maxLevel: 2, group: "Product", description: "Dedicated skincare and beauty product-development center. Level II supports flagship AAA teams." },
-  toy_center: { id: "toy_center", kind: "office", label: "Toy Center", icon: "🧸", size: [4,4], buildCost: 140_000, monthlyCost: 14_000, capacity: 4, team: "product", repeatable: true, maxLevel: 2, group: "Product", description: "Dedicated toy-design center. Level II supports flagship AAA teams." },
-  research_center: { id: "research_center", kind: "office", label: "Research Center", icon: "🔬", size: [4,4], buildCost: 180_000, monthlyCost: 18_000, capacity: 2, team: "innovation", repeatable: false, maxLevel: 3, group: "Product", description: "Home for the CIO and R&D team. Required for company research; upgrades accelerate research and unlock flagship development infrastructure." },
-  training_center: { id: "training_center", kind: "office", label: "Training Room", icon: "🎓", size: [3,3], buildCost: 45_000, monthlyCost: 5_000, capacity: 1, team: "unassigned", repeatable: true, maxLevel: 2, group: "People", description: "Runs employee upskilling programs. Upgrade for more simultaneous trainees and faster courses." },
-  brand_studio: { id: "brand_studio", kind: "office", label: "Brand Studio", icon: "🎨", size: [3,3], buildCost: 60_000, monthlyCost: 7_000, capacity: 2, team: "marketing", repeatable: false, maxLevel: 2, group: "Commercial", description: "Creative brand hub. Improves the efficiency of long-term brand building." },
-  hr_office: { id: "hr_office", kind: "office", label: "HR Office", icon: "🧑‍💼", size: [3,3], buildCost: 80_000, monthlyCost: 8_000, capacity: 2, team: "strategy", repeatable: false, maxLevel: 2, group: "People", description: "Formal people operations. Speeds external recruiting searches." },
-  marketing_office: { id: "marketing_office", kind: "office", label: "Marketing Office", icon: "📣", size: [4,3], buildCost: 95_000, monthlyCost: 10_000, capacity: 4, team: "marketing", repeatable: false, maxLevel: 2, group: "Commercial", description: "Dedicated campaign team space. Improves paid marketing execution." },
-  logistics_office: { id: "logistics_office", kind: "office", label: "Logistics Office", icon: "🚚", size: [3,3], buildCost: 90_000, monthlyCost: 9_000, capacity: 3, team: "operations", repeatable: false, maxLevel: 2, group: "Operations", description: "Coordinates suppliers and freight. Shortens production lead times and improves external capacity." },
-  consumer_insights: { id: "consumer_insights", kind: "office", label: "Consumer Insights Lab", icon: "🧭", size: [4,3], buildCost: 160_000, monthlyCost: 15_000, capacity: 3, team: "strategy", repeatable: false, maxLevel: 2, group: "Commercial", description: "Dedicated market-research facility. Speeds commissioned studies and product diagnosis." },
-  warehouse: { id: "warehouse", kind: "warehouse", label: "Warehouse", icon: "📦", size: [6,4], buildCost: 70_000, monthlyCost: 8_000, capacity: 50_000, team: "operations", repeatable: true, maxLevel: 3, group: "Operations", description: "Standard finished-goods storage. Build several or expand each from Small to Medium to Large." },
-  cold_storage: { id: "cold_storage", kind: "warehouse", label: "Cold Storage", icon: "❄️", size: [5,4], buildCost: 210_000, monthlyCost: 18_000, capacity: 60_000, team: "operations", repeatable: true, maxLevel: 2, group: "Operations", description: "Purpose-built climate, refrigerated and frozen storage for temperature-sensitive products." },
-  distribution_hub: { id: "distribution_hub", kind: "warehouse", label: "Distribution Hub", icon: "🚛", size: [7,5], buildCost: 650_000, monthlyCost: 42_000, capacity: 250_000, team: "operations", repeatable: false, maxLevel: 2, group: "Operations", description: "Late-game logistics hub with huge storage and faster inbound/outbound coordination." },
-  factory: { id: "factory", kind: "factory", label: "Factory", icon: "🏭", size: [6,4], buildCost: 200_000, monthlyCost: 18_000, capacity: 100_000, team: "operations", repeatable: true, maxLevel: 3, group: "Operations", description: "Owned manufacturing capacity. Requires Owned Manufacturing research." },
-  outsourcing: { id: "outsourcing", kind: "outsourcing", label: "Sourcing Office", icon: "🤝", size: [3,2], buildCost: 40_000, monthlyCost: 7_000, capacity: 150_000, team: "operations", repeatable: true, maxLevel: 3, group: "Operations", description: "Dedicated supplier-management capacity for outsourced production." },
-  executive_wing: { id: "executive_wing", kind: "office", label: "Executive Wing", icon: "🏛️", size: [4,4], buildCost: 480_000, monthlyCost: 32_000, capacity: 8, team: "unassigned", repeatable: false, maxLevel: 2, group: "Core", description: "Late-game leadership space. Adds flexible senior seats and a small company-wide management bonus." },
+  office: { id: "office", kind: "office", label: "General Office", icon: "🏢", size: [2,2], levelSizes:[[2,2],[3,3],[4,4]], buildCost: 25_000, monthlyCost: 6_000, capacity: 4, team: "unassigned", repeatable: true, maxLevel: 3, group: "Core", description: "Flexible office space. The first one becomes the Founder Office; later offices can also expand physically." },
+  design_studio: { id: "design_studio", kind: "office", label: "Design Studio", icon: "✏️", size: [2,2], levelSizes:[[2,2],[3,3]], buildCost: 55_000, monthlyCost: 7_000, capacity: 3, team: "product", repeatable: true, maxLevel: 2, group: "Product", description: "Compact general-purpose product design studio. A flexible home for Product Designers before specialist centers are required." },
+  beauty_center: { id: "beauty_center", kind: "office", label: "Beauty Center", icon: "✨", size: [3,3], levelSizes:[[3,3],[4,4]], buildCost: 140_000, monthlyCost: 14_000, capacity: 4, team: "product", repeatable: true, maxLevel: 2, group: "Product", description: "Dedicated skincare and beauty product-development center. Level II supports flagship AAA teams." },
+  toy_center: { id: "toy_center", kind: "office", label: "Toy Center", icon: "🧸", size: [3,3], levelSizes:[[3,3],[4,4]], buildCost: 140_000, monthlyCost: 14_000, capacity: 4, team: "product", repeatable: true, maxLevel: 2, group: "Product", description: "Dedicated toy-design center. Level II supports flagship AAA teams." },
+  food_center: { id:"food_center",kind:"office",label:"Food Innovation Kitchen",icon:"🍲",size:[3,3],levelSizes:[[3,3],[4,4]],buildCost:150_000,monthlyCost:15_000,capacity:4,team:"product",repeatable:true,maxLevel:2,group:"Product",description:"Sensory kitchen and pilot lab for Packaged Food. Level II supports flagship AAA teams." },
+  fashion_atelier: { id:"fashion_atelier",kind:"office",label:"Fashion Atelier",icon:"🧵",size:[3,3],levelSizes:[[3,3],[4,4]],buildCost:150_000,monthlyCost:15_000,capacity:4,team:"product",repeatable:true,maxLevel:2,group:"Product",description:"Pattern, material and collection studio for Apparel. Level II supports flagship AAA teams." },
+  electronics_lab: { id:"electronics_lab",kind:"office",label:"Prototype & Reliability Lab",icon:"⚡",size:[3,3],levelSizes:[[3,3],[4,4]],buildCost:190_000,monthlyCost:18_000,capacity:4,team:"product",repeatable:true,maxLevel:2,group:"Product",description:"Hardware prototyping and stress-testing lab for Consumer Electronics. Level II supports flagship AAA teams." },
+  research_center: { id: "research_center", kind: "office", label: "Research Center", icon: "🔬", size: [3,3], levelSizes:[[3,3],[4,4],[5,5]], buildCost: 180_000, monthlyCost: 18_000, capacity: 2, team: "innovation", repeatable: false, maxLevel: 3, group: "Product", description: "Home for the CIO and R&D team. Expands from a small lab to a flagship innovation center." },
+  training_center: { id: "training_center", kind: "office", label: "Training Room", icon: "🎓", size: [2,2], levelSizes:[[2,2],[3,3]], buildCost: 45_000, monthlyCost: 5_000, capacity: 1, team: "unassigned", repeatable: true, maxLevel: 2, group: "People", description: "Runs employee upskilling programs. Upgrade into a larger corporate learning center." },
+  brand_studio: { id: "brand_studio", kind: "office", label: "Brand Studio", icon: "🎨", size: [2,2], levelSizes:[[2,2],[3,3]], buildCost: 60_000, monthlyCost: 7_000, capacity: 2, team: "marketing", repeatable: false, maxLevel: 2, group: "Commercial", description: "Creative brand hub. Improves the efficiency of long-term brand building." },
+  hr_office: { id: "hr_office", kind: "office", label: "HR Office", icon: "🧑‍💼", size: [2,2], levelSizes:[[2,2],[3,3]], buildCost: 80_000, monthlyCost: 8_000, capacity: 2, team: "strategy", repeatable: false, maxLevel: 2, group: "People", description: "Formal people operations. Expands into a larger recruiting and people hub." },
+  marketing_office: { id: "marketing_office", kind: "office", label: "Marketing Office", icon: "📣", size: [3,3], levelSizes:[[3,3],[4,4]], buildCost: 95_000, monthlyCost: 10_000, capacity: 4, team: "marketing", repeatable: false, maxLevel: 2, group: "Commercial", description: "Dedicated campaign team space. Improves paid marketing execution." },
+  logistics_office: { id: "logistics_office", kind: "office", label: "Logistics Office", icon: "🚚", size: [3,3], levelSizes:[[3,3],[4,4]], buildCost: 90_000, monthlyCost: 9_000, capacity: 3, team: "operations", repeatable: false, maxLevel: 2, group: "Operations", description: "Coordinates suppliers and freight. Expands into a larger operations control center." },
+  consumer_insights: { id: "consumer_insights", kind: "office", label: "Consumer Insights Lab", icon: "🧭", size: [3,3], levelSizes:[[3,3],[4,4]], buildCost: 160_000, monthlyCost: 15_000, capacity: 3, team: "strategy", repeatable: false, maxLevel: 2, group: "Commercial", description: "Dedicated market-research facility. Speeds commissioned studies and product diagnosis." },
+  warehouse: { id: "warehouse", kind: "warehouse", label: "Warehouse", icon: "📦", size: [3,3], levelSizes:[[3,3],[4,4],[5,5]], buildCost: 70_000, monthlyCost: 8_000, capacity: 50_000, team: "operations", repeatable: true, maxLevel: 3, group: "Operations", description: "Standard finished-goods storage. Expand each building from Small to Medium to Large." },
+  cold_storage: { id: "cold_storage", kind: "warehouse", label: "Cold Storage", icon: "❄️", size: [4,4], levelSizes:[[4,4],[5,5]], buildCost: 210_000, monthlyCost: 18_000, capacity: 60_000, team: "operations", repeatable: true, maxLevel: 2, group: "Operations", description: "Purpose-built climate, refrigerated and frozen storage for temperature-sensitive products." },
+  distribution_hub: { id: "distribution_hub", kind: "warehouse", label: "Distribution Hub", icon: "🚛", size: [5,5], levelSizes:[[5,5],[6,6]], buildCost: 650_000, monthlyCost: 42_000, capacity: 250_000, team: "operations", repeatable: false, maxLevel: 2, group: "Operations", description: "Late-game logistics hub with huge storage and faster inbound/outbound coordination." },
+  factory: { id: "factory", kind: "factory", label: "Factory", icon: "🏭", size: [6,4], levelSizes:[[6,4],[7,5],[8,6]], buildCost: 200_000, monthlyCost: 18_000, capacity: 100_000, team: "operations", repeatable: true, maxLevel: 3, group: "Operations", description: "Owned manufacturing capacity. Physical expansion adds production capacity." },
+  outsourcing: { id: "outsourcing", kind: "outsourcing", label: "Sourcing Office", icon: "🤝", size: [3,2], levelSizes:[[3,2],[4,3],[5,4]], buildCost: 40_000, monthlyCost: 7_000, capacity: 150_000, team: "operations", repeatable: true, maxLevel: 3, group: "Operations", description: "Dedicated supplier-management capacity for outsourced production." },
+  executive_wing: { id: "executive_wing", kind: "office", label: "Executive Wing", icon: "🏛️", size: [4,4], levelSizes:[[4,4],[5,5]], buildCost: 480_000, monthlyCost: 32_000, capacity: 8, team: "unassigned", repeatable: false, maxLevel: 2, group: "Core", description: "Late-game leadership space. Adds flexible senior seats and a small company-wide management bonus." },
 };
 
 export const BUILDABLE_FACILITY_IDS: FacilityTypeId[] = [
-  "office", "training_center", "brand_studio",
-  "beauty_center", "toy_center", "research_center",
+  "office", "design_studio", "training_center", "brand_studio",
+  "beauty_center", "toy_center", "food_center", "fashion_atelier", "electronics_lab", "research_center",
   "hr_office", "marketing_office", "logistics_office", "consumer_insights",
   "warehouse", "cold_storage", "distribution_hub", "outsourcing", "factory", "executive_wing",
 ];
@@ -66,6 +71,16 @@ export function roomFacilityType(room: OperatingRoom): FacilityTypeId {
   return "office";
 }
 
+/** Recoverable value shown before a player commits to demolition. */
+export function facilityDemolitionRefund(room: OperatingRoom): number {
+  return Math.max(0, Math.round(room.buildCost * .25));
+}
+
+/** Moving preserves the building, upgrades and staff, but charges contractors. */
+export function facilityMoveCost(room: OperatingRoom): number {
+  return Math.max(2_500, Math.round(room.buildCost * .02));
+}
+
 export function facilityDefForRoom(room: OperatingRoom): FacilityDef { return FACILITY_DEFS[roomFacilityType(room)]; }
 export function founderOffice(w: World): OperatingRoom | undefined { return w.player.operatingRooms.find((r) => r.id === "founder-office"); }
 export function founderOfficeLevel(w: World): number { return Math.max(0, founderOffice(w)?.upgradeLevel ?? (founderOffice(w) ? 1 : 0)); }
@@ -79,11 +94,14 @@ export function facilityBuildRequirement(w: World, type: FacilityTypeId): string
   const founderLevel = founderOfficeLevel(w);
   if (type !== "office" && !founder) return "Build the Founder Office first.";
   if (!def.repeatable && facilityRooms(w, type).some((r) => r.id !== "founder-office")) return `${def.label} is unique; upgrade the existing facility instead.`;
-  if (["beauty_center","toy_center","research_center","hr_office","marketing_office","logistics_office"].includes(type) && founderLevel < 2) return "Expand the Founder Office to Level II first.";
+  if (["beauty_center","toy_center","food_center","fashion_atelier","electronics_lab","research_center","hr_office","marketing_office","logistics_office"].includes(type) && founderLevel < 2) return "Expand the Founder Office to Level II first.";
   if (type === "consumer_insights" && founderLevel < 3) return "Reach Founder Office III first.";
   if (["distribution_hub","executive_wing"].includes(type) && founderLevel < 4) return "Reach Founder Office IV first.";
   if (type === "beauty_center" && w.player.businesses?.skincare?.status !== "active") return "Activate the Skincare business first.";
   if (type === "toy_center" && w.player.businesses?.toys?.status !== "active") return "Activate the Toys business first.";
+  if (type === "food_center" && w.player.businesses?.food?.status !== "active") return "Activate the Packaged Food business first.";
+  if (type === "fashion_atelier" && w.player.businesses?.apparel?.status !== "active") return "Activate the Apparel business first.";
+  if (type === "electronics_lab" && w.player.businesses?.electronics?.status !== "active") return "Activate the Consumer Electronics business first.";
   const researched = new Set(w.player.research?.completed ?? []);
   if (type === "factory" && !researched.has("owned_manufacturing")) return "Research Owned Manufacturing first.";
   if (type === "outsourcing" && !researched.has("supplier_management")) return "Research Supplier Management first.";
@@ -153,8 +171,12 @@ export function roomSupportsProductDesign(room: OperatingRoom, industryId?: stri
   if (room.id === "founder-office") return true;
   const type = roomFacilityType(room);
   if (type === "training_center" || type === "research_center" || type === "hr_office" || type === "marketing_office" || type === "logistics_office" || type === "consumer_insights" || type === "brand_studio" || type === "executive_wing") return false;
+  if (type === "design_studio") return true;
   if (type === "beauty_center") return !industryId || industryId === "skincare";
   if (type === "toy_center") return !industryId || industryId === "toys";
+  if (type === "food_center") return !industryId || industryId === "food";
+  if (type === "fashion_atelier") return !industryId || industryId === "apparel";
+  if (type === "electronics_lab") return !industryId || industryId === "electronics";
   return room.team === "product";
 }
 
@@ -162,7 +184,7 @@ export function roleFitsRoom(role: PersonnelRole, room: OperatingRoom): boolean 
   if (room.id === "founder-office") return true;
   const type = roomFacilityType(room);
   if (type === "training_center") return false;
-  if (type === "beauty_center" || type === "toy_center") return role === "product_manager";
+  if (type === "design_studio" || type === "beauty_center" || type === "toy_center" || type === "food_center" || type === "fashion_atelier" || type === "electronics_lab") return role === "product_manager";
   if (type === "research_center") return role === "innovation";
   if (type === "brand_studio" || type === "marketing_office") return role === "marketing";
   if (type === "logistics_office") return role === "operations";
@@ -190,6 +212,17 @@ export function officeStageForLevel(level: number): { label: string; capacity: n
   return { label: "Founder Office IV · Corporate HQ", capacity: 32 };
 }
 
+export function facilityFootprintForLevel(type: FacilityTypeId, level: number, room?: Pick<OperatingRoom, "id">): [number, number] {
+  const lv = Math.max(1, Math.floor(level));
+  if (room?.id === "founder-office") {
+    const founderSizes: [number, number][] = [[2,2],[3,3],[4,4],[5,5]];
+    return founderSizes[Math.min(founderSizes.length - 1, lv - 1)];
+  }
+  const def = FACILITY_DEFS[type];
+  const sizes = def.levelSizes?.length ? def.levelSizes : [def.size];
+  return sizes[Math.min(sizes.length - 1, lv - 1)];
+}
+
 function levelCapacity(type: FacilityTypeId, level: number, room: OperatingRoom): number {
   const lv = Math.max(1, level);
   if (room.id === "founder-office") return officeStageForLevel(lv).capacity;
@@ -198,7 +231,8 @@ function levelCapacity(type: FacilityTypeId, level: number, room: OperatingRoom)
   if (type === "distribution_hub") return lv >= 2 ? 450_000 : 250_000;
   if (type === "factory") return [0,100_000,175_000,275_000][Math.min(3,lv)] ?? 275_000;
   if (type === "outsourcing") return [0,150_000,250_000,400_000][Math.min(3,lv)] ?? 400_000;
-  if (type === "beauty_center" || type === "toy_center") return lv >= 2 ? 8 : 4;
+  if (type === "design_studio") return lv >= 2 ? 5 : 3;
+  if (["beauty_center","toy_center","food_center","fashion_atelier","electronics_lab"].includes(type)) return lv >= 2 ? 8 : 4;
   if (type === "research_center") return [0,2,4,6][Math.min(3,lv)] ?? 6;
   if (type === "training_center") return lv >= 2 ? 3 : 1;
   if (type === "executive_wing") return lv >= 2 ? 12 : 8;
@@ -223,7 +257,7 @@ export function facilityUpgradeQuote(room: OperatingRoom): FacilityUpgradeQuote 
   const currentCap = levelCapacity(type, currentLevel, room);
   const nextCap = levelCapacity(type, nextLevel, room);
   const specialCosts: Partial<Record<FacilityTypeId, number[]>> = {
-    beauty_center: [0, 240_000], toy_center: [0, 240_000], research_center: [0, 260_000, 650_000], training_center: [0, 110_000],
+    design_studio:[0,90_000],beauty_center:[0,240_000],toy_center:[0,240_000],food_center:[0,250_000],fashion_atelier:[0,250_000],electronics_lab:[0,320_000],research_center:[0,260_000,650_000],training_center:[0,110_000],
     warehouse: [0, 85_000, 180_000], cold_storage: [0, 280_000], distribution_hub: [0, 700_000], executive_wing: [0, 650_000],
   };
   const cost = specialCosts[type]?.[currentLevel] ?? Math.round(def.buildCost * (currentLevel === 1 ? .65 : .95));
@@ -238,7 +272,7 @@ export function facilityUpgradeRequirement(w: World, room: OperatingRoom, nextLe
     return null;
   }
   const type = roomFacilityType(room);
-  if ((type === "beauty_center" || type === "toy_center") && nextLevel >= 2 && !(w.player.research?.completed ?? []).includes("flagship_product_development")) return "Research Flagship Product Development before upgrading this design center to Level II.";
+  if (["beauty_center","toy_center","food_center","fashion_atelier","electronics_lab"].includes(type) && nextLevel >= 2 && !(w.player.research?.completed ?? []).includes("flagship_product_development")) return "Research Flagship Product Development before upgrading this design center to Level II.";
   if (type === "research_center" && nextLevel >= 2 && !(w.player.research?.completed ?? []).includes("advanced_product_development")) return "Research Advanced Product Development before expanding the Research Center.";
   if (type === "research_center" && nextLevel >= 3 && !(w.player.research?.completed ?? []).includes("flagship_product_development")) return "Research Flagship Product Development before building Research Center III.";
   if (type === "consumer_insights" && !(w.player.research?.completed ?? []).includes("market_intelligence")) return "Research Market Intelligence first.";
@@ -317,7 +351,9 @@ export function roomOperatingCostPerQuarter(w: World): number { return w.player.
 
 export function trainingCapacity(w: World): number { return facilityRooms(w, "training_center").reduce((sum, r) => sum + r.capacity, 0); }
 export function researchCenterLevel(w: World): number { return highestFacilityLevel(w, "research_center"); }
-export function productCenterTypeForIndustry(industryId?: string): FacilityTypeId | null { return industryId === "skincare" ? "beauty_center" : industryId === "toys" ? "toy_center" : null; }
+export function productCenterTypeForIndustry(industryId?: string): FacilityTypeId | null {
+  return industryId === "skincare" ? "beauty_center" : industryId === "toys" ? "toy_center" : industryId === "food" ? "food_center" : industryId === "apparel" ? "fashion_atelier" : industryId === "electronics" ? "electronics_lab" : null;
+}
 export function productCenterLevel(w: World, industryId?: string): number { const t = productCenterTypeForIndustry(industryId); return t ? highestFacilityLevel(w, t) : 0; }
 
 export function facilityEffectMultiplier(w: World, effect: "brand" | "marketing" | "recruiting" | "logistics" | "insights" | "leadership"): number {

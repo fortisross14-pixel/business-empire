@@ -3,13 +3,14 @@ import type { World, FacilityTypeId, OperatingRoom, OperatingTeamKind, Personnel
 import type { StorageProfileId } from "../../engine/productCatalog";
 import { PRODUCT_PROJECT_TIERS } from "../../engine/types";
 import { C, ctrlBtn, bigBtn, fmtMoney, fmtNum } from "../theme";
-import { BUILDABLE_FACILITY_IDS, CAMPUS_ENTRANCE, CAMPUS_MAP_SIZE, CAMPUS_PATH_COST, FACILITY_DEFS, adjacentTiles, campusPathConnectedSet, facilityBuildRequirement, facilityDefForRoom, facilityUpgradeQuote, facilityUpgradeRequirement, officeStageForLevel, roleFitsRoom, roomFacilityType, roomTouchesConnectedPath, storageModuleRequirement, WAREHOUSE_MODULE_COST } from "../../engine/infrastructure";
+import { BUILDABLE_FACILITY_IDS, CAMPUS_ENTRANCE, CAMPUS_MAP_SIZE, CAMPUS_PATH_COST, FACILITY_DEFS, adjacentTiles, campusPathConnectedSet, facilityBuildRequirement, facilityDefForRoom, facilityDemolitionRefund, facilityFootprintForLevel, facilityMoveCost, facilityUpgradeQuote, facilityUpgradeRequirement, officeStageForLevel, roleFitsRoom, roomFacilityType, roomTouchesConnectedPath, storageModuleRequirement, WAREHOUSE_MODULE_COST } from "../../engine/infrastructure";
 import { brandById, primaryBrand } from "../../engine/brands";
 import { archetypeByKey, defaultFactoryFamiliesForIndustry, MANUFACTURING_FAMILIES, STORAGE_PROFILES } from "../../engine/productCatalog";
-import { canCreateProduct, inventoryUsed } from "../../engine/capacity";
+import { canCreateProduct, canDemolishFacility, inventoryUsed, productionLeadDays } from "../../engine/capacity";
 import { INDUSTRIES } from "../../engine/industries";
 import { campusAssetImage, CAMPUS_ASSETS, roomCampusAsset } from "../campus/assetRegistry";
 import { teamEffectiveness } from "../../engine/people";
+import { researchDef } from "../../engine/research";
 
 const MAP = 48;
 const TW = 54;
@@ -123,15 +124,16 @@ function roomHeight(room: Room) {
   return 36;
 }
 
-export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, buildPath, buildPathLine, demolishRoom, upgradeRoom, retoolFactory, installWarehouseModule, onNavigate }: {
+export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, buildPath, buildPathLine, moveRoom, demolishRoom, upgradeRoom, retoolFactory, installWarehouseModule, onNavigate }: {
   world: World;
   openCreator: () => void;
   updateRooms: (rooms: OperatingRoom[]) => void;
   buildRoom: (room: OperatingRoom) => boolean;
   buildPath: (x: number, y: number) => { ok: boolean; reason?: string };
   buildPathLine: (tiles: { x: number; y: number }[]) => { ok: boolean; reason?: string; built: number };
-  demolishRoom: (roomId: string) => void;
-  upgradeRoom: (roomId: string) => { ok: boolean; reason?: string };
+  moveRoom: (roomId: string, placement: { x: number; y: number; w: number; h: number }) => { ok: boolean; reason?: string };
+  demolishRoom: (roomId: string) => { ok: boolean; reason?: string };
+  upgradeRoom: (roomId: string, placement?: { x: number; y: number; w: number; h: number }) => { ok: boolean; reason?: string };
   retoolFactory: (roomId: string, productKey: string) => boolean;
   installWarehouseModule: (roomId: string, profile: StorageProfileId) => { ok: boolean; reason?: string };
   onNavigate: (top: string, sub: string) => void;
@@ -143,12 +145,16 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   const companyBrand = primaryBrand(world);
   const setRooms = (next: Room[] | ((prev: Room[]) => Room[])) => updateRooms(typeof next === "function" ? next(rooms) : next);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expansionTargetId, setExpansionTargetId] = useState<string | null>(null);
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
+  const [confirmDemolishId, setConfirmDemolishId] = useState<string | null>(null);
   const [tool, setTool] = useState<BuildTool | "select" | "navigate">("select");
   const [hover, setHover] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState({ x: 480, y: 28, zoom: 0.72 });
   const [message, setMessage] = useState("Start from the entrance: build a path, then place your first office beside it.");
   const [visualClock, setVisualClock] = useState(Date.now());
   const [buildFx, setBuildFx] = useState<{ id: string; until: number } | null>(null);
+  const [pulseOpen, setPulseOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
   const [compact, setCompact] = useState(false);
   const drag = useRef<{ active: boolean; moved: boolean; x: number; y: number }>({ active: false, moved: false, x: 0, y: 0 });
@@ -175,6 +181,10 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   }, [rooms.length]);
 
   const selected = rooms.find((r) => r.id === selectedId) ?? null;
+  const expansionRoom = expansionTargetId ? rooms.find((r) => r.id === expansionTargetId) ?? null : null;
+  const expansionQuote = expansionRoom ? facilityUpgradeQuote(expansionRoom) : null;
+  const expansionSize = expansionRoom && expansionQuote ? facilityFootprintForLevel(roomFacilityType(expansionRoom), expansionQuote.nextLevel, expansionRoom) : null;
+  const movingRoom = moveTargetId ? rooms.find((r) => r.id === moveTargetId) ?? null : null;
   const productRooms = rooms.filter((r) => r.kind === "office" && (r.team === "product" || r.id === "founder-office") && r.productKey);
   const hasFactory = rooms.some((r) => r.kind === "factory");
   const hasWarehouse = rooms.some((r) => r.kind === "warehouse");
@@ -191,7 +201,7 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   const supplierUnits = rooms.filter((r) => r.kind === "outsourcing").reduce((a, r) => a + r.capacity, 0);
   const ownBatches = world.player.skus.filter((s) => s.method === "own" && (s.mfgBatchSize ?? 0) > 0);
   const outsourceBatches = world.player.skus.filter((s) => s.method === "outsource" && (s.mfgBatchSize ?? 0) > 0);
-  const activeSkus = world.player.skus.filter((s) => s.status === "active");
+  const activeSkus = world.player.skus.filter((s) => !s.archived && s.status === "active");
   const staffedSeats = rooms.filter((r) => r.kind === "office").reduce((n, r) => n + r.assignedPersonnelIds.length + (r.id === "founder-office" ? 1 : 0), 0);
   const totalSeats = rooms.filter((r) => r.kind === "office").reduce((n, r) => n + r.capacity, 0);
   const salesPulse = world.live?.totalUnits ?? 0;
@@ -199,7 +209,7 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   const activeProductTypes = [...new Map(activeBusinesses.flatMap((b) => b.unlockedCategories).map((key) => [key, archetypeByKey(key)] as const)).values()].filter((p): p is NonNullable<typeof p> => Boolean(p));
 
   const flow = useMemo(() => productRooms.map((r) => {
-    const sku = world.player.skus.find((s) => s.id === r.skuId) ?? world.player.skus.find((s) => s.productKey === r.productKey);
+    const sku = world.player.skus.find((s) => !s.archived && s.id === r.skuId) ?? world.player.skus.find((s) => !s.archived && s.productKey === r.productKey);
     const productionReady = sku?.method === "own" ? hasFactory : hasSourcing;
     return {
       room: r,
@@ -213,6 +223,8 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
 
   const roomStatus = (room: Room) => {
     const facilityType = roomFacilityType(room);
+    const occupiedSeats = room.assignedPersonnelIds.length + (room.id === "founder-office" ? 1 : 0);
+    const occupancy = room.capacity ? occupiedSeats / room.capacity : 0;
     if (facilityType === "training_center") {
       const active = (world.player.trainingPrograms ?? []).filter((program) => program.facilityRoomId === room.id);
       const progress = room.capacity ? active.length / room.capacity : 0;
@@ -224,14 +236,38 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
     }
     if (room.kind === "factory") {
       const load = factoryUnits ? Math.min(1, ownBatches.reduce((n, s) => n + (s.mfgBatchSize ?? 0), 0) / Math.max(factoryUnits, 1)) : 0;
-      return { label: ownBatches.length ? `${ownBatches.length} batch${ownBatches.length > 1 ? "es" : ""} running` : "Idle capacity", progress: load, tone: ownBatches.length ? "active" : "neutral" };
+      if (teamEffectiveness(world, "operations") <= 0) return { label: "Blocked · needs Operations", progress: 0, tone: "blocked" };
+      return { label: ownBatches.length ? `${ownBatches.length} batch${ownBatches.length > 1 ? "es" : ""} running` : "Idle capacity", progress: load, tone: ownBatches.length ? "active" : "idle" };
     }
     if (room.kind === "outsourcing") {
       const load = supplierUnits ? Math.min(1, outsourceBatches.reduce((n, s) => n + (s.mfgBatchSize ?? 0), 0) / Math.max(supplierUnits, 1)) : 0;
-      return { label: outsourceBatches.length ? `${outsourceBatches.length} supplier batch${outsourceBatches.length > 1 ? "es" : ""}` : "Partners ready", progress: load, tone: outsourceBatches.length ? "active" : "neutral" };
+      if (teamEffectiveness(world, "operations") <= 0) return { label: "Blocked · needs Operations", progress: 0, tone: "blocked" };
+      return { label: outsourceBatches.length ? `${outsourceBatches.length} supplier batch${outsourceBatches.length > 1 ? "es" : ""}` : "Partners ready", progress: load, tone: outsourceBatches.length ? "active" : "idle" };
     }
-    const occupiedSeats = room.assignedPersonnelIds.length + (room.id === "founder-office" ? 1 : 0);
-    const occupancy = room.capacity ? occupiedSeats / room.capacity : 0;
+    if (facilityType === "research_center") {
+      const project = world.player.research?.active;
+      if (project && room.assignedPersonnelIds.length === 0) return { label: "Blocked · research unstaffed", progress: project.progress / project.requiredPoints, tone: "blocked" };
+      if (project) return { label: `${researchDef(project.nodeId).title} · ${Math.round(project.progress / project.requiredPoints * 100)}%`, progress: project.progress / project.requiredPoints, tone: "active" };
+      return { label: room.assignedPersonnelIds.length ? "Research team ready" : "Idle · no research team", progress: occupancy, tone: room.assignedPersonnelIds.length ? "ok" : "idle" };
+    }
+    if (facilityType === "marketing_office") {
+      const campaigns = world.activeCampaigns.length;
+      const spending = world.player.marketingTarget > 0 || world.player.brandMarketingTarget > 0;
+      if ((campaigns || spending) && room.assignedPersonnelIds.length === 0) return { label: "Blocked · marketing unstaffed", progress: 0, tone: "blocked" };
+      if (campaigns) return { label: `${campaigns} campaign${campaigns === 1 ? "" : "s"} live`, progress: Math.min(1, campaigns / Math.max(1, room.capacity)), tone: "active" };
+      return { label: spending ? "Always-on marketing" : "Campaign team ready", progress: spending ? .55 : occupancy, tone: spending ? "active" : "idle" };
+    }
+    if (facilityType === "brand_studio") {
+      const active = world.player.brandMarketingTarget > 0;
+      return { label: active ? "Brand building live" : "Brand studio ready", progress: active ? Math.min(1, world.player.brandMarketingTarget / 300_000) : occupancy, tone: active ? "active" : "idle" };
+    }
+    if (facilityType === "consumer_insights") {
+      const studies = world.studies.filter((study) => !study.done).length;
+      return { label: studies ? `${studies} market stud${studies === 1 ? "y" : "ies"} running` : "Insights team ready", progress: studies ? Math.min(1, studies / 3) : occupancy, tone: studies ? "active" : "idle" };
+    }
+    if (facilityType === "hr_office") {
+      return world.player.talentSearch ? { label: `Talent search · ${Math.ceil(world.player.talentSearch.daysLeft)}d`, progress: 1 - world.player.talentSearch.daysLeft / world.player.talentSearch.totalDays, tone: "active" } : { label: "Talent team ready", progress: occupancy, tone: "idle" };
+    }
     const linkedSku = room.skuId ? world.player.skus.find((s) => s.id === room.skuId) : null;
     const productSku = linkedSku ?? (room.team === "product" && room.productKey ? world.player.skus.find((s) => s.productKey === room.productKey && s.status === "designing") : null);
     if (productSku?.status === "designing") {
@@ -239,7 +275,7 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       const total = PRODUCT_PROJECT_TIERS[tier].baseDays;
       return { label: `${productSku.name} · ${Math.max(0, productSku.designDaysLeft)}d`, progress: Math.max(0, Math.min(1, 1 - productSku.designDaysLeft / total)), tone: "active" };
     }
-    return { label: `${occupiedSeats}/${room.capacity} positions`, progress: occupancy, tone: room.id === "founder-office" ? "ok" : room.team === "unassigned" ? "warn" : "ok" };
+    return { label: `${occupiedSeats}/${room.capacity} positions`, progress: occupancy, tone: room.id === "founder-office" ? "ok" : room.team === "unassigned" ? "attention" : occupiedSeats ? "ok" : "idle" };
   };
 
   useEffect(() => {
@@ -320,6 +356,21 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       const drawH = drawW * (img.naturalHeight / img.naturalWidth);
       ctx.save(); ctx.globalAlpha = opacity;
       ctx.drawImage(img, base.x - drawW * asset.anchor.x, base.y - drawH * asset.anchor.y, drawW, drawH);
+      ctx.restore();
+    };
+
+    const drawFacilityPreview = (facilityType: FacilityTypeId, tileX: number, tileY: number, tileW: number, tileH: number, valid: boolean) => {
+      const meta = FACILITY_DEFS[facilityType];
+      const previewRoom: Room = { id: "preview", kind: meta.kind, facilityType, x: tileX, y: tileY, w: tileW, h: tileH, name: meta.label, team: meta.team, productKey: null, skuId: null, assignedPersonnelIds: [], buildCost: meta.buildCost, monthlyCost: meta.monthlyCost, capacity: meta.capacity, upgradeLevel: 1 };
+      const asset = roomCampusAsset(world, previewRoom);
+      const image = campusAssetImage(asset, () => setVisualClock(Date.now()));
+      if (!image?.complete || !image.naturalWidth) return;
+      const base = iso(tileX + tileW / 2, tileY + tileH, camera.x, camera.y, camera.zoom);
+      const projectedWidth = (tileW + tileH) * (TW / 2) * camera.zoom;
+      const drawW = Math.max(105, projectedWidth * asset.scale);
+      const drawH = drawW * image.naturalHeight / image.naturalWidth;
+      ctx.save(); ctx.globalAlpha = .52; ctx.filter = valid ? "saturate(.95)" : "grayscale(.7) sepia(.25) hue-rotate(310deg)";
+      ctx.drawImage(image, base.x - drawW * asset.anchor.x, base.y - drawH * asset.anchor.y, drawW, drawH);
       ctx.restore();
     };
 
@@ -406,7 +457,12 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
         assetTopY = dy + drawH * .12;
         ctx.shadowColor = selectedNow ? "rgba(124,58,237,.3)" : "rgba(30,41,59,.14)";
         ctx.shadowBlur = selectedNow ? 15 : 6; ctx.shadowOffsetY = 5;
-        ctx.drawImage(assetImg, dx, dy, drawW, drawH);
+        const reveal = buildFx?.id === room.id && buildFx.until > visualClock ? Math.max(.08, Math.min(1, 1 - (buildFx.until - visualClock) / 4200)) : 1;
+        if (reveal < 1) {
+          ctx.save(); ctx.globalAlpha = .25 + reveal * .75;
+          ctx.beginPath(); ctx.rect(dx - 8, dy + drawH * (1 - reveal) - 8, drawW + 16, drawH * reveal + 16); ctx.clip();
+          ctx.drawImage(assetImg, dx, dy, drawW, drawH); ctx.restore();
+        } else ctx.drawImage(assetImg, dx, dy, drawW, drawH);
         ctx.shadowColor = "transparent";
         if (selectedNow) {
           ctx.strokeStyle = C.violet; ctx.lineWidth = 2.5;
@@ -438,17 +494,31 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       }
 
       // Nameplate + live status, not decorative labels.
-      const labelW = Math.min(178, Math.max(100, room.name.length * 6.4 + 30));
-      roundedRect(ctx, center.x - labelW / 2, roofY - 44, labelW, 34, 8);
+      const labelW = Math.min(194, Math.max(118, room.name.length * 6.4 + 46));
+      roundedRect(ctx, center.x - labelW / 2, roofY - 54, labelW, 44, 10);
       ctx.fillStyle = selectedNow ? "rgba(255,255,255,.98)" : "rgba(255,255,255,.91)"; ctx.fill();
       ctx.strokeStyle = selectedNow ? C.violet : "rgba(100,116,139,.22)"; ctx.lineWidth = selectedNow ? 1.5 : 1; ctx.stroke();
-      ctx.textAlign = "center"; ctx.fillStyle = "#1f2937"; ctx.font = `700 ${Math.max(9, 11.5 * camera.zoom)}px system-ui`;
-      ctx.fillText(`${facilityDefForRoom(room).icon} ${room.name}`, center.x, roofY - 28);
-      ctx.font = `${Math.max(8, 9.5 * camera.zoom)}px system-ui`; ctx.fillStyle = status.tone === "critical" ? "#dc2626" : status.tone === "warn" ? "#b45309" : status.tone === "active" ? "#4f46e5" : "#64748b";
-      ctx.fillText(status.label, center.x, roofY - 16);
-      const barW = labelW - 18; ctx.fillStyle = "rgba(148,163,184,.2)"; ctx.fillRect(center.x - barW / 2, roofY - 13, barW, 2.5);
-      ctx.fillStyle = status.tone === "critical" ? "#ef4444" : status.tone === "warn" ? "#f59e0b" : status.tone === "active" ? companyBrand.color : "#22c55e";
-      ctx.fillRect(center.x - barW / 2, roofY - 13, barW * Math.max(.03, Math.min(1, status.progress)), 2.5);
+      ctx.textAlign = "center"; ctx.fillStyle = "#1f2937"; ctx.font = `800 ${Math.max(9, 11.5 * camera.zoom)}px system-ui`;
+      ctx.fillText(`${facilityDefForRoom(room).icon} ${room.name}`, center.x - 5, roofY - 38);
+      const statusColor = status.tone === "critical" || status.tone === "blocked" ? "#dc2626" : status.tone === "warn" || status.tone === "attention" ? "#b45309" : status.tone === "active" ? "#4f46e5" : status.tone === "idle" ? "#64748b" : "#15803d";
+      ctx.font = `${Math.max(8, 9.5 * camera.zoom)}px system-ui`; ctx.fillStyle = statusColor;
+      ctx.fillText(status.label, center.x - 5, roofY - 24);
+      const progress = Math.max(.03, Math.min(1, status.progress));
+      const barW = labelW - 20; roundedRect(ctx, center.x - barW / 2, roofY - 19, barW, 5, 3); ctx.fillStyle = "rgba(148,163,184,.24)"; ctx.fill();
+      const barGradient = ctx.createLinearGradient(center.x - barW / 2, 0, center.x + barW / 2, 0); barGradient.addColorStop(0, statusColor); barGradient.addColorStop(1, status.tone === "active" ? "#22d3ee" : statusColor);
+      roundedRect(ctx, center.x - barW / 2, roofY - 19, barW * progress, 5, 3); ctx.fillStyle = barGradient; ctx.fill();
+      if (status.tone === "active") { const shimmer = (visualClock / 18) % Math.max(1, barW * progress); ctx.fillStyle = "rgba(255,255,255,.58)"; ctx.fillRect(center.x - barW / 2 + shimmer - 5, roofY - 19, 7, 5); }
+      const ringX = center.x + labelW / 2 - 13, ringY = roofY - 37;
+      ctx.beginPath(); ctx.arc(ringX, ringY, 8, 0, Math.PI * 2); ctx.strokeStyle = "rgba(148,163,184,.24)"; ctx.lineWidth = 3; ctx.stroke();
+      ctx.beginPath(); ctx.arc(ringX, ringY, 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress); ctx.strokeStyle = statusColor; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.stroke(); ctx.lineCap = "butt";
+      if (status.tone === "blocked" || status.tone === "critical" || status.tone === "attention") {
+        const pulse = 5 + Math.sin(visualClock / 180) * 2;
+        ctx.beginPath(); ctx.arc(ringX, ringY, pulse, 0, Math.PI * 2); ctx.fillStyle = statusColor; ctx.fill();
+        ctx.fillStyle = "white"; ctx.font = `900 ${Math.max(7, 8 * camera.zoom)}px system-ui`; ctx.fillText("!", ringX, ringY + 3);
+      } else if (status.tone === "active") {
+        const pulse = .45 + .35 * Math.sin(visualClock / 210);
+        ctx.beginPath(); ctx.arc(ringX, ringY, 2.5 + pulse, 0, Math.PI * 2); ctx.fillStyle = `rgba(79,70,229,${pulse})`; ctx.fill();
+      }
       ctx.restore();
 
       if (room.kind === "office") {
@@ -470,7 +540,15 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       if (room.kind === "warehouse") drawTruck(room, truckIndex++, inventoryInbound > 0 || salesPulse > 0 ? 1 : 0);
     }
 
-    if (tool === "path") {
+    if ((expansionRoom && expansionQuote && expansionSize) || movingRoom) {
+      const previewRoom = movingRoom ?? expansionRoom!;
+      const [w, h] = movingRoom ? [movingRoom.w, movingRoom.h] : expansionSize!;
+      const candidate = { x: hover.x, y: hover.y, w, h };
+      const coversPath = paths.some((p) => p.x >= hover.x && p.x < hover.x + w && p.y >= hover.y && p.y < hover.y + h);
+      const differentParcel = !movingRoom || hover.x !== movingRoom.x || hover.y !== movingRoom.y;
+      const valid = differentParcel && hover.x >= 0 && hover.y >= 0 && hover.x + w <= MAP && hover.y + h <= MAP && !rooms.some((r) => r.id !== previewRoom.id && overlaps(candidate, r)) && !coversPath && roomTouchesConnectedPath(world, candidate);
+      for (let yy = hover.y; yy < hover.y + h; yy++) for (let xx = hover.x; xx < hover.x + w; xx++) if (xx >= 0 && yy >= 0 && xx < MAP && yy < MAP) drawDiamond(xx, yy, valid ? "#bbf7d0" : "#fecaca", valid ? "#16a34a" : "#dc2626", 0.76);
+    } else if (tool === "path") {
       const draftTiles = pathDraft ? straightTiles(pathDraft.start, pathDraft.end) : [hover];
       const existing = new Set(paths.map((path) => `${path.x},${path.y}`));
       const virtualConnected = campusPathConnectedSet(world);
@@ -496,8 +574,9 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       const coversPath = paths.some((p) => p.x >= hover.x && p.x < hover.x + w && p.y >= hover.y && p.y < hover.y + h);
       const valid = hover.x >= 0 && hover.y >= 0 && hover.x + w <= MAP && hover.y + h <= MAP && !rooms.some((r) => overlaps(candidate, r)) && !coversPath && roomTouchesConnectedPath(world, candidate);
       for (let yy = hover.y; yy < hover.y + h; yy++) for (let xx = hover.x; xx < hover.x + w; xx++) if (xx >= 0 && yy >= 0 && xx < MAP && yy < MAP) drawDiamond(xx, yy, valid ? "#bbf7d0" : "#fecaca", valid ? "#16a34a" : "#dc2626", 0.73);
+      drawFacilityPreview(tool, hover.x, hover.y, w, h, valid);
     }
-  }, [rooms, paths, selectedId, hover, tool, camera, compact, visualClock, buildFx, pathDraft, world.tick, world.live, world.player.skus, world.player.personnel, companyBrand.color]);
+  }, [rooms, paths, selectedId, hover, tool, camera, compact, visualClock, buildFx, pathDraft, world.tick, world.live, world.player.skus, world.player.personnel, companyBrand.color, expansionTargetId, moveTargetId]);
 
   function straightTiles(start: { x: number; y: number }, end: { x: number; y: number }) {
     const horizontal = Math.abs(end.x - start.x) >= Math.abs(end.y - start.y);
@@ -570,6 +649,32 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
     setMessage(firstOffice ? "Founder Office I built. One of four positions belongs to you; three staff desks are open." : `${meta.label} complete. Its gameplay effect is now active.`);
   };
 
+  const placeExpansion = (x: number, y: number) => {
+    if (!expansionRoom || !expansionQuote || !expansionSize) { setExpansionTargetId(null); return; }
+    const [w, h] = expansionSize;
+    const candidate = { x, y, w, h };
+    const coversPath = paths.some((p) => p.x >= x && p.x < x + w && p.y >= y && p.y < y + h);
+    const overlapsOther = rooms.some((r) => r.id !== expansionRoom.id && overlaps(candidate, r));
+    if (x < 0 || y < 0 || x + w > MAP || y + h > MAP || overlapsOther || coversPath) {
+      setMessage(coversPath ? "The expanded building cannot cover an existing path." : overlapsOther ? "The expanded footprint overlaps another facility." : "That expanded footprint does not fit there."); return;
+    }
+    if (!roomTouchesConnectedPath(world, candidate)) { setMessage("The expanded facility must touch the connected campus path network."); return; }
+    const result = upgradeRoom(expansionRoom.id, candidate);
+    if (!result.ok) { setMessage(result.reason ?? "Expansion failed."); return; }
+    setBuildFx({ id: expansionRoom.id, until: Date.now() + 4200 });
+    setExpansionTargetId(null); setSelectedId(expansionRoom.id); setTool("select");
+    setMessage(`${expansionRoom.name} expanded to level ${expansionQuote.nextLevel} · ${w}×${h} footprint.`);
+  };
+
+  const placeMove = (x: number, y: number) => {
+    if (!movingRoom) { setMoveTargetId(null); return; }
+    const result = moveRoom(movingRoom.id, { x, y, w: movingRoom.w, h: movingRoom.h });
+    if (!result.ok) { setMessage(result.reason ?? "Move failed."); return; }
+    setBuildFx({ id: movingRoom.id, until: Date.now() + 2600 });
+    setMoveTargetId(null); setSelectedId(movingRoom.id); setTool("select");
+    setMessage(`${movingRoom.name} moved. Staff, upgrades and operating settings were preserved.`);
+  };
+
   const updateSelected = (patch: Partial<Room>) => {
     if (!selectedId) return;
     setRooms((rs) => rs.map((r) => r.id === selectedId ? { ...r, ...patch } : r));
@@ -586,13 +691,24 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
     !world.player.contracts.length && !hasSourcing && "No route to market or distribution-contract team exists.",
     !rooms.some((r) => r.kind === "office" && r.team === "finance") && "No finance team is monitoring unit economics and cash.",
   ].filter(Boolean) as string[];
+  const attentionRooms = rooms.map((room) => ({ room, status: roomStatus(room) })).filter(({ status }) => ["critical", "blocked", "attention", "warn"].includes(status.tone));
 
   const selectedStatus = selected ? roomStatus(selected) : null;
   const selectedType = selected ? roomFacilityType(selected) : null;
   const selectedNav = selected ? roomNavigation(selected) : null;
   const selectedUpgrade = selected ? facilityUpgradeQuote(selected) : null;
   const selectedUpgradeGate = selected && selectedUpgrade ? facilityUpgradeRequirement(world, selected, selectedUpgrade.nextLevel) : null;
+  const selectedNextSize = selected && selectedUpgrade ? facilityFootprintForLevel(roomFacilityType(selected), selectedUpgrade.nextLevel, selected) : null;
+  const selectedDemolition = selected ? canDemolishFacility(world, selected) : null;
   const warehouseProducts = world.player.skus.filter((s) => s.inventory + (s.mfgBatchSize ?? 0) > 0).sort((a, b) => (b.inventory + (b.mfgBatchSize ?? 0)) - (a.inventory + (a.mfgBatchSize ?? 0))).slice(0, 5);
+  const liveWorkItems = [
+    ...world.player.skus.filter((sku) => sku.status === "designing").map((sku) => { const tier = sku.projectTier ?? "A"; const total = PRODUCT_PROJECT_TIERS[tier].baseDays; return { id: `design_${sku.id}`, icon: "✦", label: sku.name, detail: `${Math.ceil(sku.designDaysLeft)}d · design`, progress: Math.max(.03, 1 - sku.designDaysLeft / total), color: "#8b5cf6", top: "ops", sub: "products" }; }),
+    ...world.player.skus.filter((sku) => (sku.mfgDaysLeft ?? 0) > 0).map((sku) => { const total = productionLeadDays(world, sku, sku.mfgBatchSize || 1); return { id: `batch_${sku.id}`, icon: "⚙", label: sku.name, detail: `${Math.ceil(sku.mfgDaysLeft)}d · production`, progress: Math.max(.03, 1 - sku.mfgDaysLeft / Math.max(1, total)), color: "#06b6d4", top: "ops", sub: "products" }; }),
+    ...(world.player.research?.active ? [{ id: "research", icon: "⌬", label: researchDef(world.player.research.active.nodeId).title, detail: "Research program", progress: world.player.research.active.progress / world.player.research.active.requiredPoints, color: "#ec4899", top: "mgmt", sub: "research" }] : []),
+    ...(world.player.talentSearch ? [{ id: "talent", icon: "◎", label: "Talent search", detail: `${Math.ceil(world.player.talentSearch.daysLeft)}d remaining`, progress: 1 - world.player.talentSearch.daysLeft / world.player.talentSearch.totalDays, color: "#f59e0b", top: "mgmt", sub: "personnel" }] : []),
+    ...(world.player.trainingPrograms ?? []).map((program) => ({ id: `training_${program.id}`, icon: "↟", label: world.player.personnel.find((person) => person.id === program.personnelId)?.name ?? "Employee training", detail: `${Math.ceil(program.daysLeft)}d · training`, progress: 1 - program.daysLeft / program.totalDays, color: "#10b981", top: "mgmt", sub: "personnel" })),
+    ...world.activeCampaigns.map((campaign) => ({ id: `campaign_${campaign.id}`, icon: "◈", label: campaign.name, detail: `${Math.ceil(campaign.daysRemaining)}d · campaign`, progress: 1 - campaign.daysRemaining / campaign.totalDays, color: "#f43f5e", top: "mkt", sub: "campaigns" })),
+  ].slice(0, 4);
 
   const resetCamera = () => {
     const width = wrapRef.current?.clientWidth ?? 900;
@@ -603,19 +719,23 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   return <div style={{ position: "relative", height: "100%", minHeight: compact ? 0 : 520, overflow: "hidden" }}>
     <div ref={wrapRef} style={{ position: "absolute", inset: 0, background: "#e5ece7", overflow: "hidden" }}>
       <canvas ref={canvasRef}
-        onPointerDown={(e) => { const tile = pointerTile(e.clientX, e.clientY, e.currentTarget); drag.current = { active: true, moved: false, x: e.clientX, y: e.clientY }; pathStart.current = tool === "path" ? tile : null; if (tool === "path") setPathDraft({ start: tile, end: tile }); e.currentTarget.setPointerCapture(e.pointerId); }}
+        onPointerDown={(e) => { const tile = pointerTile(e.clientX, e.clientY, e.currentTarget); drag.current = { active: true, moved: false, x: e.clientX, y: e.clientY }; pathStart.current = !expansionTargetId && !moveTargetId && tool === "path" ? tile : null; if (!expansionTargetId && !moveTargetId && tool === "path") setPathDraft({ start: tile, end: tile }); e.currentTarget.setPointerCapture(e.pointerId); }}
         onPointerMove={(e) => {
           const t = pointerTile(e.clientX, e.clientY, e.currentTarget); setHover(t);
           if (!drag.current.active) return;
           const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y;
           if (tool === "path" && pathStart.current) { const tile = pointerTile(e.clientX, e.clientY, e.currentTarget); setPathDraft({ start: pathStart.current, end: tile }); }
           if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true;
-          if ((tool === "select" || tool === "navigate") && drag.current.moved) { setCamera((c) => ({ ...c, x: c.x + dx, y: c.y + dy })); drag.current.x = e.clientX; drag.current.y = e.clientY; }
+          if (!expansionTargetId && !moveTargetId && (tool === "select" || tool === "navigate") && drag.current.moved) { setCamera((c) => ({ ...c, x: c.x + dx, y: c.y + dy })); drag.current.x = e.clientX; drag.current.y = e.clientY; }
         }}
         onPointerUp={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-          if (tool === "path") {
+          if (expansionRoom && expansionQuote && expansionSize && !drag.current.moved) {
+            const t = pointerTile(e.clientX, e.clientY, e.currentTarget); placeExpansion(t.x, t.y);
+          } else if (movingRoom && !drag.current.moved) {
+            const t = pointerTile(e.clientX, e.clientY, e.currentTarget); placeMove(t.x, t.y);
+          } else if (tool === "path") {
             const start = pathStart.current ?? pointerTile(e.clientX, e.clientY, e.currentTarget);
             const end = pointerTile(e.clientX, e.clientY, e.currentTarget);
             const existing = new Set(paths.map((path) => `${path.x},${path.y}`));
@@ -633,20 +753,30 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
         style={{ display: "block", cursor: tool === "select" || tool === "navigate" ? "grab" : "crosshair", touchAction: "none" }} />
 
       <div style={{ position: "absolute", left: compact ? 7 : 14, top: compact ? 7 : 14, right: compact ? 7 : undefined, display: "flex", gap: compact ? 4 : 6, flexWrap: "wrap", maxWidth: compact ? "none" : "calc(100% - 160px)", zIndex: 6 }}>
-        <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: tool === "select" ? C.violet : "rgba(255,255,255,.94)", color: tool === "select" ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => { setTool("select"); setMessage("Click a building footprint to inspect it. Drag empty ground to move the campus."); }}>↖ {compact ? "Map" : "Campus"}</button>
-        <BuildMenu compact={compact} current={tool} world={world} cash={world.player.cash} hasOffice={rooms.some((r) => r.kind === "office")} choose={(kind) => { setTool(kind); setSelectedId(null); setMessage(kind === "path" ? "Path mode: drag from any connected path tile. Blue = existing, green = new, red = blocked." : `Build mode: place ${!rooms.some((r) => r.kind === "office") && kind === "office" ? "your 4-seat Founder Office I" : FACILITY_DEFS[kind].label.toLowerCase()} beside the connected path.`); }} />
+        <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: tool === "select" ? C.violet : "rgba(255,255,255,.94)", color: tool === "select" ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => { setExpansionTargetId(null); setMoveTargetId(null); setTool("select"); setMessage("Click a building footprint to inspect it. Drag empty ground to move the campus."); }}>↖ {compact ? "Map" : "Campus"}</button>
+        <BuildMenu compact={compact} current={tool} world={world} cash={world.player.cash} hasOffice={rooms.some((r) => r.kind === "office")} choose={(kind) => { setExpansionTargetId(null); setMoveTargetId(null); setTool(kind); setSelectedId(null); setMessage(kind === "path" ? "Path mode: drag from any connected path tile. Blue = existing, green = new, red = blocked." : `Build mode: place ${!rooms.some((r) => r.kind === "office") && kind === "office" ? "your compact 2×2 Founder Office I" : FACILITY_DEFS[kind].label.toLowerCase()} beside the connected path.`); }} />
+        <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: pulseOpen ? C.navy : "rgba(255,255,255,.94)", color: pulseOpen ? "white" : attentionRooms.length ? C.red : C.dim, borderColor: attentionRooms.length ? "#fca5a5" : C.line }} onClick={() => { setPulseOpen((value) => !value); setSelectedId(null); }}>◉ Pulse{attentionRooms.length ? ` · ${attentionRooms.length}` : ""}</button>
         <button aria-label="Zoom out" style={{ ...ctrlBtn, minWidth: compact ? 40 : undefined, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.max(.38, c.zoom - .08) }))}>−</button>
         <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={resetCamera}>{compact ? "⌖" : "Center"}</button>
         <button aria-label="Zoom in" style={{ ...ctrlBtn, minWidth: compact ? 40 : undefined, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.min(1.15, c.zoom + .08) }))}>＋</button>
       </div>
+      {expansionRoom && expansionSize && <div style={{ position:"absolute", left:compact ? 7 : 14, right:compact ? 7 : 14, top:compact ? 56 : 62, zIndex:9, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, background:"rgba(255,255,255,.97)", border:`1px solid ${C.violet}`, borderRadius:10, padding:"8px 10px", boxShadow:"0 8px 24px rgba(17,42,67,.18)", color:C.ink, fontSize:10.5 }}><span><b>Expansion placement:</b> choose a {expansionSize[0]}×{expansionSize[1]} footprint for {expansionRoom.name}. Green fits; red is blocked.</span><button style={ctrlBtn} onClick={() => { setExpansionTargetId(null); setSelectedId(expansionRoom.id); setMessage("Expansion cancelled."); }}>Cancel</button></div>}
+      {movingRoom && <div style={{ position:"absolute", left:compact ? 7 : 14, right:compact ? 7 : 14, top:compact ? 56 : 62, zIndex:9, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, background:"rgba(255,255,255,.97)", border:`1px solid ${C.cyan}`, borderRadius:10, padding:"8px 10px", boxShadow:"0 8px 24px rgba(17,42,67,.18)", color:C.ink, fontSize:10.5 }}><span><b>Move facility:</b> choose a connected {movingRoom.w}×{movingRoom.h} parcel for {movingRoom.name}. Cost {fmtMoney(facilityMoveCost(movingRoom))}; everything inside is preserved.</span><button style={ctrlBtn} onClick={() => { setMoveTargetId(null); setSelectedId(movingRoom.id); setMessage("Move cancelled."); }}>Cancel</button></div>}
+      {pulseOpen && !expansionRoom && !movingRoom && <div style={compact ? { position: "absolute", zIndex: 10, left: 7, right: 7, top: 58, maxHeight: "56%", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.line}`, borderRadius: 13, padding: 11, boxShadow: "0 14px 38px rgba(17,42,67,.24)" } : { position: "absolute", zIndex: 10, right: 14, top: 58, width: 420, maxHeight: "calc(100% - 82px)", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.line}`, borderRadius: 13, padding: 12, boxShadow: "0 14px 38px rgba(17,42,67,.24)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}><div><div style={{ color: C.violet, fontSize: 8, fontWeight: 900, letterSpacing: .7 }}>LIVE OPERATING VIEW</div><b style={{ display: "block", fontSize: 15, marginTop: 2 }}>Campus pulse</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>The company’s physical state at a glance.</div></div><button style={ctrlBtn} onClick={() => setPulseOpen(false)}>✕</button></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6, marginTop: 10 }}><CampusKpi icon="👥" label="Office seats" value={`${staffedSeats}/${totalSeats}`} detail={totalSeats ? `${Math.round(staffedSeats / totalSeats * 100)}% occupied` : "Build the first office"} /><CampusKpi icon="📦" label="Warehouse" value={warehouseUnits ? `${Math.round(warehouseUtil * 100)}%` : "None"} detail={`${fmtNum(warehouseUsed)} / ${fmtNum(warehouseUnits)} space`} tone={warehouseUtil > .85 ? "warn" : undefined} /><CampusKpi icon="🏭" label="Production" value={`${ownBatches.length + outsourceBatches.length} live`} detail={`${fmtNum(factoryUnits + supplierUnits)} monthly capacity`} /><CampusKpi icon="🛍" label="Products" value={String(activeSkus.length)} detail={`${fmtNum(inventoryOnHand)} units ready`} /></div>
+        {(attentionRooms.length > 0 || blockers.length > 0) && <div style={{ marginTop: 11 }}><b style={{ fontSize: 10.5, color: C.red }}>Needs attention</b><div style={{ display: "grid", gap: 5, marginTop: 6 }}>{attentionRooms.map(({ room, status }) => <button key={room.id} onClick={() => { setPulseOpen(false); setSelectedId(room.id); }} style={{ border: "1px solid #fecaca", background: "#fff7f7", color: C.ink, borderRadius: 8, padding: 8, textAlign: "left", cursor: "pointer", fontSize: 10 }}><b>{room.name}</b><span style={{ color: C.red, marginLeft: 6 }}>{status.label}</span></button>)}{blockers.filter((blocker) => !attentionRooms.some(({ status }) => blocker.toLowerCase().includes(status.label.toLowerCase()))).slice(0, 4).map((blocker) => <div key={blocker} style={{ border: "1px solid #fed7aa", background: "#fffaf0", color: "#92400e", borderRadius: 8, padding: 8, fontSize: 10 }}>{blocker}</div>)}</div></div>}
+        {flow.length > 0 && <div style={{ marginTop: 11 }}><b style={{ fontSize: 10.5 }}>Product flow</b><div style={{ display: "grid", gap: 6, marginTop: 6 }}>{flow.slice(0, 4).map((item) => <div key={item.room.id} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: 8 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10.5 }}><b>{item.sku?.name ?? item.label}</b><span style={{ color: item.productionReady && item.inventoryReady && item.routeReady ? C.green : C.amber }}>{item.productionReady && item.inventoryReady && item.routeReady ? "FLOWING" : "INCOMPLETE"}</span></div><div style={{ display: "flex", gap: 4, marginTop: 5 }}><FlowStep ok={item.productionReady} label="Make" detail="" /><FlowStep ok={item.inventoryReady} label="Store" detail="" /><FlowStep ok={item.routeReady} label="Sell" detail="" /></div></div>)}</div></div>}
+      </div>}
       {!compact && <div style={{ position: "absolute", right: 14, top: 14, background: "rgba(17,42,67,.88)", color: "white", borderRadius: 9, padding: "7px 10px", fontSize: 10, fontWeight: 800 }}>◈ {world.company} Campus</div>}
+      {!compact && !selected && !pulseOpen && liveWorkItems.length > 0 && <div className="campus-work-stack"><div className="campus-work-title"><span>LIVE WORK</span><b>{liveWorkItems.length} active</b></div>{liveWorkItems.map((item) => <button key={item.id} onClick={() => onNavigate(item.top, item.sub)}><span className="campus-progress-ring" style={{ background: `conic-gradient(${item.color} ${Math.max(3, Math.min(100, item.progress * 100))}%,rgba(148,163,184,.22) 0)` }}><i>{item.icon}</i></span><span><b>{item.label}</b><small>{item.detail}</small><em><i style={{ width: `${Math.max(3, Math.min(100, item.progress * 100))}%`, background: item.color }}/></em></span><strong>{Math.round(item.progress * 100)}%</strong></button>)}</div>}
       {!compact && <div style={{ position: "absolute", left: 14, bottom: 14, maxWidth: 520, background: "rgba(255,255,255,.92)", backdropFilter: "blur(7px)", border: `1px solid ${C.line}`, borderRadius: 9, padding: "7px 10px", color: C.dim, fontSize: 10.5 }}>{message}</div>}
     </div>
 
-    {selected && <div style={compact ? { position: "absolute", left: 6, right: 6, bottom: 6, top: "auto", width: "auto", maxHeight: "56%", overflowY: "auto", WebkitOverflowScrolling: "touch", background: "rgba(255,255,255,.99)", border: `1px solid ${C.violet}`, borderRadius: "16px 16px 12px 12px", padding: 12, paddingBottom: "calc(12px + env(safe-area-inset-bottom))", boxShadow: "0 -12px 38px rgba(17,42,67,.25)", zIndex: 8 } : { position: "absolute", right: 18, top: 68, width: "min(390px,calc(100vw - 36px))", maxHeight: "calc(100vh - 158px)", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.violet}`, borderRadius: 15, padding: 15, boxShadow: "0 18px 44px rgba(17,42,67,.24)", zIndex: 8 }}>
+    {selected && !expansionTargetId && !moveTargetId && <div style={compact ? { position: "absolute", left: 6, right: 6, bottom: 6, top: "auto", width: "auto", maxHeight: "56%", overflowY: "auto", WebkitOverflowScrolling: "touch", background: "rgba(255,255,255,.99)", border: `1px solid ${C.violet}`, borderRadius: "16px 16px 12px 12px", padding: 12, paddingBottom: "calc(12px + env(safe-area-inset-bottom))", boxShadow: "0 -12px 38px rgba(17,42,67,.25)", zIndex: 8 } : { position: "absolute", right: 18, top: 68, width: "min(390px,calc(100vw - 36px))", maxHeight: "calc(100vh - 158px)", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.violet}`, borderRadius: 15, padding: 15, boxShadow: "0 18px 44px rgba(17,42,67,.24)", zIndex: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
         <div><div style={{ color: C.faint, fontSize: 8.5, fontWeight: 900, letterSpacing: .8 }}>FACILITY</div><div style={{ fontWeight: 900, fontSize: 16, marginTop: 2 }}>{facilityDefForRoom(selected).icon} {selected.name}</div><div style={{ color: C.dim, fontSize: 10.5, marginTop: 3, lineHeight: 1.4 }}>{facilityDefForRoom(selected).description}</div></div>
-        <button style={ctrlBtn} onClick={() => setSelectedId(null)}>✕</button>
+        <button style={ctrlBtn} onClick={() => { setSelectedId(null); setExpansionTargetId(null); }}>✕</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6, marginTop: 10 }}>
         <div style={facilityMetric}><span>Status</span><b style={{ color: selectedStatus?.tone === "critical" ? C.red : selectedStatus?.tone === "warn" ? C.amber : C.violet }}>{selectedStatus?.label}</b></div>
@@ -694,10 +824,18 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       {selected.kind === "factory" && <><div style={{ color: C.faint, fontSize: 10.5, marginTop: 9 }}>Lines: {(selected.manufacturingFamilies ?? []).map((id) => MANUFACTURING_FAMILIES[id]?.label ?? id).join(" + ") || "No production family configured"}</div>{teamEffectiveness(world,"operations") <= 0 && <div style={{ color:C.amber,fontSize:9.5,marginTop:6 }}>↳ Factory engineering is idle until a Sourcing / Operations specialist is seated.</div>}<label style={labelStyle}>Production profile<select disabled={teamEffectiveness(world,"operations") <= 0} title={teamEffectiveness(world,"operations") <= 0 ? "Seat a Sourcing / Operations specialist before retooling a factory." : undefined} value="" onChange={(e) => { if (!e.target.value) return; const profile = archetypeByKey(e.target.value); const ok = retoolFactory(selected.id, e.target.value); setMessage(ok ? `${selected.name} retooled for ${profile?.label ?? e.target.value}.` : "Retooling requires an Operations specialist, an unlocked category and sufficient cash."); }} style={{...inputStyle,opacity:teamEffectiveness(world,"operations") > 0 ? 1 : .5}}><option value="">Retool factory for product…</option>{activeProductTypes.map((p) => <option key={p.key} value={p.key}>{p.label} · {p.manufacturingFamilies.map((id) => MANUFACTURING_FAMILIES[id]?.label ?? id).join(" + ")}</option>)}</select></label><ActivityMini title="Owned production" skus={ownBatches} empty="No owned batches currently running." /></>}
       {selected.kind === "outsourcing" && <ActivityMini title="Supplier pipeline" skus={outsourceBatches} empty="No outsourced batches currently inbound." />}
       <div style={{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}><div><b style={{ fontSize: 11.5 }}>Expand / upgrade facility</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{selected.kind === "office" ? "Founder progression is I → II → III → IV. Specialist buildings have their own capped upgrade path." : "Capacity upgrades improve this facility without changing its current footprint."}</div></div>{selectedUpgrade ? <span style={{ color: C.violet, fontWeight: 900, fontSize: 10 }}>{selected.kind === "office" ? `${selectedUpgrade.currentLabel} → ${selectedUpgrade.nextLabel}` : `L${selectedUpgrade.currentLevel} → L${selectedUpgrade.nextLevel}`}</span> : <span style={{ color: C.green, fontWeight: 900, fontSize: 10 }}>MAX</span>}</div>
-        {selectedUpgrade ? <><button disabled={Boolean(selectedUpgradeGate) || world.player.cash < selectedUpgrade.cost} title={selectedUpgradeGate ?? (world.player.cash < selectedUpgrade.cost ? `Need ${fmtMoney(selectedUpgrade.cost - world.player.cash)} more cash.` : undefined)} style={{ ...ctrlBtn, width: "100%", marginTop: 8, borderColor: C.violet, color: !selectedUpgradeGate && world.player.cash >= selectedUpgrade.cost ? C.violet : C.faint, opacity: !selectedUpgradeGate && world.player.cash >= selectedUpgrade.cost ? 1 : .5 }} onClick={() => { const r = upgradeRoom(selected.id); setMessage(r.ok ? `${selected.name} expanded to level ${selectedUpgrade.nextLevel}.` : r.reason ?? "Upgrade failed."); }}>{selectedType === "training_center" ? `Upgrade · +${fmtNum(selectedUpgrade.capacityGain)} training slots · ${fmtMoney(selectedUpgrade.cost)}` : selected.kind === "office" ? `Expand · +${fmtNum(selectedUpgrade.capacityGain)} seats · ${fmtMoney(selectedUpgrade.cost)}` : `Upgrade · +${fmtNum(selectedUpgrade.capacityGain)} capacity · ${fmtMoney(selectedUpgrade.cost)}` }</button>{selectedUpgradeGate ? <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ {selectedUpgradeGate}</div> : world.player.cash < selectedUpgrade.cost && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ Need {fmtMoney(selectedUpgrade.cost - world.player.cash)} more cash for this upgrade.</div>}</> : <div style={{ color: C.faint, fontSize: 10, marginTop: 6 }}>This facility is fully upgraded.</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}><div><b style={{ fontSize: 11.5 }}>Facility controls</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>Move keeps staff, upgrades and settings. Expansion needs a larger footprint. Demolition is blocked while the building is operationally required.</div></div></div>
+        <button disabled={world.player.cash < facilityMoveCost(selected)} title={world.player.cash < facilityMoveCost(selected) ? `Need ${fmtMoney(facilityMoveCost(selected) - world.player.cash)} more cash.` : undefined} style={{ ...ctrlBtn, width: "100%", marginTop: 8, borderColor: C.cyan, color: world.player.cash >= facilityMoveCost(selected) ? C.cyan : C.faint, opacity: world.player.cash >= facilityMoveCost(selected) ? 1 : .5 }} onClick={() => { setConfirmDemolishId(null); setMoveTargetId(selected.id); setTool("select"); setMessage(`Move placement: choose a connected ${selected.w}×${selected.h} parcel for ${selected.name}.`); }}>↔ Move facility · {fmtMoney(facilityMoveCost(selected))}</button>
       </div>
-      {selected.id !== "founder-office" && <button disabled={selectedType === "training_center" && (world.player.trainingPrograms ?? []).some((t)=>t.facilityRoomId===selected.id)} title={selectedType === "training_center" && (world.player.trainingPrograms ?? []).some((t)=>t.facilityRoomId===selected.id) ? "Finish active training before demolishing this facility." : undefined} style={{ ...ctrlBtn, width: "100%", marginTop: 12, color: C.red, opacity:selectedType === "training_center" && (world.player.trainingPrograms ?? []).some((t)=>t.facilityRoomId===selected.id) ? .45 : 1 }} onClick={() => { demolishRoom(selected.id); setSelectedId(null); }}>Demolish facility</button>}
+      <div style={{ marginTop: 10, borderTop: `1px solid ${C.line}`, paddingTop: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}><div><b style={{ fontSize: 11.5 }}>Expand / upgrade facility</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{"Every expansion claims a larger physical footprint. After choosing Expand, place the enlarged building again on the grid; it may overlap its own current footprint but not paths or other facilities."}</div></div>{selectedUpgrade ? <span style={{ color: C.violet, fontWeight: 900, fontSize: 10 }}>{selected.kind === "office" ? `${selectedUpgrade.currentLabel} → ${selectedUpgrade.nextLabel}` : `L${selectedUpgrade.currentLevel} → L${selectedUpgrade.nextLevel}`}</span> : <span style={{ color: C.green, fontWeight: 900, fontSize: 10 }}>MAX</span>}</div>
+        {selectedUpgrade ? <><button disabled={Boolean(selectedUpgradeGate) || world.player.cash < selectedUpgrade.cost} title={selectedUpgradeGate ?? (world.player.cash < selectedUpgrade.cost ? `Need ${fmtMoney(selectedUpgrade.cost - world.player.cash)} more cash.` : undefined)} style={{ ...ctrlBtn, width: "100%", marginTop: 8, borderColor: C.violet, color: !selectedUpgradeGate && world.player.cash >= selectedUpgrade.cost ? C.violet : C.faint, opacity: !selectedUpgradeGate && world.player.cash >= selectedUpgrade.cost ? 1 : .5 }} onClick={() => {
+          if (!selectedNextSize) return;
+          setExpansionTargetId(selected.id); setTool("select");
+          setMessage(`Expansion placement: choose a new ${selectedNextSize[0]}×${selectedNextSize[1]} footprint for ${selected.name}. The new footprint may overlap the existing building, but not paths or other facilities.`);
+        }}>{selectedNextSize ? `${selected.w}×${selected.h} → ${selectedNextSize[0]}×${selectedNextSize[1]} · ` : ""}{selectedType === "training_center" ? `+${fmtNum(selectedUpgrade.capacityGain)} training slots · ${fmtMoney(selectedUpgrade.cost)}` : selected.kind === "office" ? `+${fmtNum(selectedUpgrade.capacityGain)} seats · ${fmtMoney(selectedUpgrade.cost)}` : `+${fmtNum(selectedUpgrade.capacityGain)} capacity · ${fmtMoney(selectedUpgrade.cost)}` }</button>{selectedUpgradeGate ? <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ {selectedUpgradeGate}</div> : world.player.cash < selectedUpgrade.cost && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ Need {fmtMoney(selectedUpgrade.cost - world.player.cash)} more cash for this upgrade.</div>}</> : <div style={{ color: C.faint, fontSize: 10, marginTop: 6 }}>This facility is fully upgraded.</div>}
+      </div>
+      {selected.id !== "founder-office" && (confirmDemolishId === selected.id ? <div style={{ marginTop: 12, padding: 10, border: "1px solid #fecaca", background: "#fff7f7", borderRadius: 10 }}><b style={{ color: C.red, fontSize: 11 }}>Demolish {selected.name}?</b><div style={{ color: C.dim, fontSize: 9.8, lineHeight: 1.4, marginTop: 3 }}>This removes the building and recovers {fmtMoney(facilityDemolitionRefund(selected))}. The action cannot be undone.</div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}><button style={ctrlBtn} onClick={() => setConfirmDemolishId(null)}>Keep facility</button><button style={{ ...ctrlBtn, color: C.red, borderColor: "#fecaca" }} onClick={() => { const result = demolishRoom(selected.id); if (result.ok) { setSelectedId(null); setConfirmDemolishId(null); } else setMessage(result.reason ?? "Demolition blocked."); }}>Confirm demolition</button></div></div> : <><button disabled={!selectedDemolition?.ok} title={selectedDemolition?.ok ? undefined : selectedDemolition?.reason} style={{ ...ctrlBtn, width: "100%", marginTop: 12, color: C.red, opacity: selectedDemolition?.ok ? 1 : .45 }} onClick={() => setConfirmDemolishId(selected.id)}>Demolish · recover {fmtMoney(facilityDemolitionRefund(selected))}</button>{!selectedDemolition?.ok && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ {selectedDemolition?.reason}</div>}</>)}
     </div>}
   </div>;
 }
@@ -706,18 +844,64 @@ function BuildMenu({ current, cash, choose, compact = false, hasOffice, world }:
   const [open, setOpen] = useState(false);
   const activeBuild = current !== "select" && current !== "navigate";
   const groups: Array<(typeof FACILITY_DEFS)[FacilityTypeId]["group"]> = ["Core", "Product", "People", "Commercial", "Operations"];
+  const groupMeta: Record<(typeof FACILITY_DEFS)[FacilityTypeId]["group"], { blurb: string; tint: string }> = {
+    Core: { blurb: "HQ, general offices and top-level leadership space.", tint: "#e0ecff" },
+    Product: { blurb: "Design, specialist centers and research facilities.", tint: "#efe5ff" },
+    People: { blurb: "Training, HR and team-development infrastructure.", tint: "#e7f7ef" },
+    Commercial: { blurb: "Brand building, insights and demand generation.", tint: "#fff0dc" },
+    Operations: { blurb: "Warehouses, logistics, factories and sourcing support.", tint: "#e0f5f8" },
+  };
+  const buildRows = (group: (typeof FACILITY_DEFS)[FacilityTypeId]["group"]) => BUILDABLE_FACILITY_IDS
+    .filter((kind) => FACILITY_DEFS[kind].group === group)
+    .map((kind) => {
+      const d = FACILITY_DEFS[kind];
+      const affordable = cash >= d.buildCost;
+      const founder = kind === "office" && !hasOffice;
+      const gate = founder ? null : facilityBuildRequirement(world, kind);
+      const available = affordable && !gate;
+      const capacityLabel = d.kind === "office" ? (kind === "training_center" ? `${d.capacity} training slot` : `${founder ? 4 : d.capacity} positions`) : `${fmtNum(d.capacity)} capacity`;
+      return { kind, d, affordable, founder, gate, available, capacityLabel };
+    })
+    .sort((a, b) => Number(b.available) - Number(a.available) || a.d.buildCost - b.d.buildCost);
+
   return <div style={{ position: "relative" }}>
     <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: open || activeBuild ? C.violet : "rgba(255,255,255,.94)", color: open || activeBuild ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => setOpen((v) => !v)}>＋ Build</button>
-    {open && <div style={{ position: "absolute", left: 0, top: compact ? 44 : 38, width: compact ? "min(310px,calc(100vw - 20px))" : 310, maxHeight: compact ? "52vh" : undefined, overflowY: compact ? "auto" : undefined, background: "white", border: `1px solid ${C.line}`, borderRadius: 11, padding: 7, boxShadow: "0 12px 32px rgba(17,42,67,.22)", zIndex: 12 }}>
-      <button disabled={cash < CAMPUS_PATH_COST} onClick={() => { choose("path"); setOpen(false); }} style={{ width: "100%", border: 0, background: current === "path" ? C.panel2 : "transparent", padding: 9, textAlign: "left", borderRadius: 7, cursor: cash >= CAMPUS_PATH_COST ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: cash >= CAMPUS_PATH_COST ? 1 : .45 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>▰ Path</b><span style={{ color: C.faint }}>{fmtMoney(CAMPUS_PATH_COST)}/tile</span></div><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>1×1 · extend from the entrance · buildings must touch connected paths</div></button>
-      {groups.map((group) => <React.Fragment key={group}>
-        <div style={{ padding: "9px 9px 4px", color: C.faint, fontSize: 8.5, fontWeight: 900, letterSpacing: .8, textTransform: "uppercase", borderTop: group === "Core" ? undefined : `1px solid ${C.grid}`, marginTop: group === "Core" ? 2 : 5 }}>{group}</div>
-        {BUILDABLE_FACILITY_IDS.filter((kind) => FACILITY_DEFS[kind].group === group).map((kind) => {
-          const d = FACILITY_DEFS[kind]; const affordable = cash >= d.buildCost; const founder = kind === "office" && !hasOffice; const gate = founder ? null : facilityBuildRequirement(world, kind); const available = affordable && !gate;
-          const capacityLabel = d.kind === "office" ? (kind === "training_center" ? `${d.capacity} training slot` : `${founder ? 4 : d.capacity} positions`) : `${fmtNum(d.capacity)} capacity`;
-          return <button disabled={!available} title={gate ?? (!affordable ? `Need ${fmtMoney(d.buildCost - cash)} more cash.` : undefined)} key={kind} onClick={() => { choose(kind); setOpen(false); }} style={{ width: "100%", border: 0, background: current === kind ? C.panel2 : "transparent", padding: 9, textAlign: "left", borderRadius: 7, cursor: available ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: available ? 1 : .45 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{d.icon} {founder ? "Founder Office I" : d.label}</b><span style={{ color: C.faint }}>{fmtMoney(d.buildCost)}</span></div><div style={{ color: available ? C.faint : C.amber, fontSize: 9.5, marginTop: 2 }}>{d.size[0]}×{d.size[1]} · {capacityLabel} · {fmtMoney(d.monthlyCost)}/mo{founder ? " · Founder + 3 staff desks" : ""}{gate ? ` · ${gate}` : !affordable ? ` · need ${fmtMoney(d.buildCost - cash)} more cash` : ""}</div></button>;
-        })}
-      </React.Fragment>)}
+    {open && <div style={{ position: "absolute", left: 0, top: compact ? 44 : 38, width: compact ? "min(352px,calc(100vw - 20px))" : 352, maxHeight: compact ? "58vh" : "72vh", overflowY: "auto", background: "white", border: `1px solid ${C.line}`, borderRadius: 12, padding: 8, boxShadow: "0 12px 32px rgba(17,42,67,.22)", zIndex: 12 }}>
+      <div style={{ padding: "6px 8px 8px", borderBottom: `1px solid ${C.grid}`, marginBottom: 6 }}>
+        <div style={{ color: C.ink, fontWeight: 900, fontSize: 12.5 }}>Campus build menu</div>
+        <div style={{ color: C.faint, fontSize: 9.8, marginTop: 2 }}>Facilities are grouped by function. Buildable items stay at the top of each section, locked ones show the missing requirement.</div>
+      </div>
+      <button disabled={cash < CAMPUS_PATH_COST} onClick={() => { choose("path"); setOpen(false); }} style={{ width: "100%", border: 0, background: current === "path" ? C.panel2 : "transparent", padding: 9, textAlign: "left", borderRadius: 8, cursor: cash >= CAMPUS_PATH_COST ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: cash >= CAMPUS_PATH_COST ? 1 : .45 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>▰ Path</b><span style={{ color: C.faint }}>{fmtMoney(CAMPUS_PATH_COST)}/tile</span></div><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>1×1 · extend from the entrance · buildings must touch connected paths</div></button>
+      {groups.map((group) => {
+        const rows = buildRows(group);
+        const availableCount = rows.filter((r) => r.available).length;
+        const meta = groupMeta[group];
+        return <div key={group} style={{ marginTop: 8, border: `1px solid ${C.grid}`, borderRadius: 10, overflow: "hidden", background: "#fbfdff" }}>
+          <div style={{ padding: "9px 10px 8px", background: `linear-gradient(180deg, ${meta.tint}, #ffffff)`, borderBottom: `1px solid ${C.grid}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <div style={{ color: C.ink, fontSize: 11.2, fontWeight: 900 }}>{group}</div>
+              <div style={{ color: availableCount > 0 ? C.green : C.faint, fontSize: 9.5, fontWeight: 800 }}>{availableCount} buildable now</div>
+            </div>
+            <div style={{ color: C.faint, fontSize: 9.2, marginTop: 3 }}>{meta.blurb}</div>
+          </div>
+          <div style={{ padding: 6 }}>
+            {rows.map(({ kind, d, affordable, founder, gate, available, capacityLabel }) => {
+              const missing = gate ?? (!affordable ? `Need ${fmtMoney(d.buildCost - cash)} more cash.` : null);
+              return <button disabled={!available} title={missing ?? undefined} key={kind} onClick={() => { choose(kind); setOpen(false); }} style={{ width: "100%", border: 0, background: current === kind ? C.panel2 : available ? "transparent" : "#fafafa", padding: 9, textAlign: "left", borderRadius: 8, cursor: available ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: available ? 1 : .62, marginBottom: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                  <b>{d.icon} {founder ? "Founder Office I" : d.label}</b>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {available ? <span style={{ color: C.green, fontSize: 8.8, fontWeight: 900, letterSpacing: .45 }}>READY</span> : <span style={{ color: C.amber, fontSize: 8.8, fontWeight: 900, letterSpacing: .45 }}>LOCKED</span>}
+                    <span style={{ color: C.faint }}>{fmtMoney(d.buildCost)}</span>
+                  </div>
+                </div>
+                <div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{d.size[0]}×{d.size[1]} · {capacityLabel} · {fmtMoney(d.monthlyCost)}/mo{founder ? " · Founder + 3 staff desks" : ""}</div>
+                <div style={{ color: available ? C.dim : C.amber, fontSize: 9.4, marginTop: 3 }}>{available ? d.description : missing}</div>
+              </button>;
+            })}
+          </div>
+        </div>;
+      })}
     </div>}
   </div>;
 }

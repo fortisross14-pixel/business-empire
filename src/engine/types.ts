@@ -119,6 +119,17 @@ export interface CompetitorProduct {
   productKey: string; // category
 }
 
+export type RivalActionKind = "launch" | "defend" | "retreat" | "price";
+
+export interface RivalActionRecord {
+  tick: number;
+  kind: RivalActionKind;
+  headline: string;
+  detail: string;
+  segmentLabel?: string;
+  productKey?: string;
+}
+
 export interface Competitor {
   id: string;
   name: string;
@@ -140,6 +151,8 @@ export interface Competitor {
   exitedCells: string[];   // coord keys they've abandoned
   actionCooldown: number;  // ticks until next strategic action allowed
   threatMemory: Record<string, number>; // coordKey -> consecutive quarters player has dominated
+  actionHistory?: RivalActionRecord[]; // durable rival memory; market news itself remains rolling
+  shareHistory?: { tick: number; share: number }[];
 }
 
 export type ProductMethod = "outsource" | "own";
@@ -184,9 +197,9 @@ export const PRODUCT_PROJECT_TIERS: Record<ProductProjectTier, {
   priorityPoints: number;
   description: string;
 }> = {
-  A: { label: "A", baseDays: 35, designerSlots: 1, leadRequired: false, designQualityCap: .46, priorityPoints: 13, description: "Focused startup project. One Product Designer; limited scope and roughly 1–2★ design ceiling." },
-  AA: { label: "AA", baseDays: 80, designerSlots: 1, leadRequired: true, designQualityCap: .79, priorityPoints: 18, description: "Advanced project. One Product Lead plus one Product Designer; capable of a strong 3–4★ design." },
-  AAA: { label: "AAA", baseDays: 150, designerSlots: 3, leadRequired: true, designQualityCap: 1, priorityPoints: 23, description: "Flagship program. One Product Lead plus three Product Designers; expensive in time and people, but capable of market-leading design." },
+  A: { label: "A", baseDays: 35, designerSlots: 1, leadRequired: false, designQualityCap: .64, priorityPoints: 13, description: "Focused startup project. One Product Designer; typical reviews begin around 1.5–2.5★ and the class ceiling is 2.9★." },
+  AA: { label: "AA", baseDays: 80, designerSlots: 1, leadRequired: true, designQualityCap: .84, priorityPoints: 18, description: "Advanced project. One Product Lead plus one Product Designer; strong teams can reach 3–4★, with 4.1★ reserved for the best AA work." },
+  AAA: { label: "AAA", baseDays: 150, designerSlots: 3, leadRequired: true, designQualityCap: 1, priorityPoints: 23, description: "Flagship program. One Product Lead plus three Product Designers; 4.8–4.9★ requires top execution and a perfect 5.0★ is exceptional." },
 };
 
 export type ProductTestingLevel = "standard" | "enhanced" | "rigorous";
@@ -217,6 +230,12 @@ export interface SKU {
   designFacets?: Record<string, string>; // generic data-driven product choices (age group, play fantasy, etc.)
   // lifecycle status
   status: ProductStatus;
+  archived?: boolean; // hidden from the active portfolio without erasing commercial history
+  archivedTick?: number;
+  archivedWasReleased?: boolean;
+  marketStudyCount?: number;
+  reviewScore?: number; // frozen 1.0–5.0 product review revealed when design completes; not a sales score
+  marketStudy?: ProductMarketStudyReport; // latest retained diagnosis for this exact SKU
   assignedPmId: string | null;
   assignedPmName?: string; // current/last lead name survives employee departures
   leadHistory?: { personId: string; personName: string; fromTick: number; toTick?: number }[];
@@ -239,6 +258,7 @@ export interface SKU {
   lifetimeDays: number;    // how long until novelty fully decays
   launchTick: number;      // when the product actually entered the market
   releasedToMarket?: boolean; // first batch may exist before commercial release
+  launchWeekReported?: boolean; // avoids repeating the first-week commercial review event
   version?: number;
   parentSkuId?: string | null;
   // economics
@@ -260,6 +280,32 @@ export interface SKU {
   lastStockoutAlertTick?: number;
   lastLowStockAlertTick?: number;
   contributionTotal: number;
+}
+
+export type MarketLessonKind = "priority" | "ip" | "quality" | "price" | "channel" | "audience" | "awareness" | "operations" | "margin";
+
+export interface MarketLesson {
+  id: string;
+  kind: MarketLessonKind;
+  title: string;
+  finding: string;
+  action: string;
+  priorityKey?: string;
+  currentStars?: number;
+  recommendedStars?: number;
+}
+
+export interface ProductMarketStudyReport {
+  skuId: string;
+  completedTick: number;
+  targetLabel: string;
+  headline: string;
+  summary: string;
+  targetMarketShare: number;
+  preferences: { key: string; label: string; importance: number; recommendedStars: number; currentStars: number }[];
+  quality: { reviewScore: number; importance: number; diagnosis: string[] };
+  bestChannel: { type: ChannelType; label: string; importance: number };
+  lessons: MarketLesson[];
 }
 
 export type ChannelType = "retail" | "marketplace" | "ownweb" | "flagship";
@@ -343,12 +389,151 @@ export interface Study {
   type: string;
   ticksLeft: number;
   done: boolean;
+  skuId?: string;
 }
 
 export interface MarketEvent {
   tick: number;
   kind: string;
   text: string;
+  code?: "rival_launch" | "rival_defense" | "rival_retreat" | "quarterly_market_review" | "decision_required" | "decision_resolved" | "decision_consequence" | "achievement_unlocked" | "outcome_unlocked" | "capital_action";
+  entityId?: string;
+  data?: Record<string, string | number | boolean>;
+}
+
+// ---- Capital, scenarios and the event-driven game layer ----
+export type InvestorType = "venture" | "family_office" | "strategic";
+
+export interface InvestorRelationship {
+  id: string;
+  name: string;
+  type: InvestorType;
+  relationship: number;
+  connectedTick: number;
+}
+
+export interface CapitalRound {
+  id: string;
+  tick: number;
+  kind: "growth_loan" | "equity";
+  amount: number;
+  dilutionPct: number;
+  counterparty: string;
+}
+
+export interface CapitalState {
+  dilutionPct: number;
+  relationships: InvestorRelationship[];
+  rounds: CapitalRound[];
+  lastRaiseTick: number;
+}
+
+export type ScenarioId = "bootstrap_brand" | "premium_challenger" | "turnaround" | "retailer_growth" | "ip_breakout";
+
+export type GameMode = "campaign" | "scenario" | "sandbox";
+export type CampaignAction = "hire" | "recruit" | "sign_contract" | "remove_contract" | "build_facility" | "demolish_facility" | "borrow" | "raise_capital" | "enter_industry" | "create_brand" | "activate_product";
+
+export interface CampaignRuntime {
+  caseId: string;
+  startTick: number;
+  deadlineTick: number;
+  initialInventory: number;
+  initialProductIds: string[];
+  initialContractIds: string[];
+  initialFacilityIds: string[];
+  scriptedEventsSeen: string[];
+  awardedStars: number;
+  completed: boolean;
+}
+
+export interface GameEffect {
+  cash?: number;
+  debt?: number;
+  inventoryPct?: number;
+  qualityDelta?: number;
+  momentumDelta?: number;
+  awarenessDelta?: number;
+  investorConfidenceDelta?: number;
+  materialCostPct?: number;
+  retailerMarginDelta?: number;
+  salaryPct?: number;
+  pricePct?: number;
+  customerSatisfactionDelta?: number;
+  competitorStrengthPct?: number;
+  targetSkuId?: string;
+  retargetTo?: Record<AxisKey, number>;
+  targetLabel?: string;
+  manufacturingDaysPct?: number;
+}
+
+export interface DecisionChoice {
+  id: string;
+  label: string;
+  summary: string;
+  immediateText: string;
+  immediate: GameEffect;
+  delayedText?: string;
+  delayed?: { days: number; effects: GameEffect };
+}
+
+export interface DecisionEvent {
+  id: string;
+  templateId: string;
+  category: string;
+  icon: string;
+  title: string;
+  description: string;
+  context: string;
+  triggeredTick: number;
+  choices: DecisionChoice[];
+}
+
+export interface DecisionHistoryEntry {
+  eventId: string;
+  templateId: string;
+  title: string;
+  choiceId: string;
+  choiceLabel: string;
+  resolvedTick: number;
+  immediateText: string;
+  delayedText?: string;
+}
+
+export interface DelayedConsequence {
+  id: string;
+  dueTick: number;
+  sourceTitle: string;
+  choiceLabel: string;
+  text: string;
+  effects: GameEffect;
+}
+
+export interface AchievementUnlock { id: string; tick: number }
+export interface OutcomeUnlock { id: string; tick: number }
+
+export interface GameplayState {
+  scenarioId: ScenarioId;
+  runSeed: number;
+  pendingDecision: DecisionEvent | null;
+  decisionHistory: DecisionHistoryEntry[];
+  delayedConsequences: DelayedConsequence[];
+  seenTemplates: string[];
+  nextDecisionTick: number;
+  achievements: AchievementUnlock[];
+  outcomes: OutcomeUnlock[];
+}
+
+export interface CompetitiveQuarterReview {
+  tick: number;
+  quarter: number;
+  playerShare: number;
+  playerRank: number;
+  previousPlayerShare: number | null;
+  leaderName: string;
+  leaderShare: number;
+  topMoverName: string;
+  topMoverDelta: number;
+  headline: string;
 }
 
 
@@ -525,7 +710,7 @@ export interface Expertise {
 export interface CampusPathTile { x: number; y: number; }
 
 export type OperatingRoomKind = "office" | "factory" | "warehouse" | "outsourcing";
-export type FacilityTypeId = "office" | "beauty_center" | "toy_center" | "research_center" | "training_center" | "brand_studio" | "hr_office" | "marketing_office" | "logistics_office" | "consumer_insights" | "warehouse" | "cold_storage" | "distribution_hub" | "factory" | "outsourcing" | "executive_wing";
+export type FacilityTypeId = "office" | "design_studio" | "beauty_center" | "toy_center" | "food_center" | "fashion_atelier" | "electronics_lab" | "research_center" | "training_center" | "brand_studio" | "hr_office" | "marketing_office" | "logistics_office" | "consumer_insights" | "warehouse" | "cold_storage" | "distribution_hub" | "factory" | "outsourcing" | "executive_wing";
 export type OperatingTeamKind = "unassigned" | "product" | "marketing" | "finance" | "sales" | "operations" | "strategy" | "innovation";
 export interface OperatingRoom {
   id: string;
@@ -636,6 +821,7 @@ export interface PlayerState {
   talentSearch?: TalentSearch | null;
   trainingPrograms: TrainingProgram[];
   expertise: Expertise;
+  productLearning: Record<string, number>; // 0..1 research coverage for achievements/UI; never a hidden product-stat bonus
   vision: Vision | null;
   operatingRooms: OperatingRoom[];
   campusPaths: CampusPathTile[]; // walkable campus paths. Buildings must connect to the entrance network.
@@ -763,6 +949,8 @@ export interface IndustryMarketState {
 }
 
 export interface World {
+  mode?: GameMode;
+  campaign?: CampaignRuntime | null;
   difficulty: DifficultyId;
   investorConfidence: number; // 0..1; only meaningful on difficulties with expectations
   expectationStrikes: number;
@@ -779,6 +967,9 @@ export interface World {
   revealed: Record<string, any>;
   history: HistoryPoint[];
   events: MarketEvent[];
+  competitiveReviews: CompetitiveQuarterReview[];
+  capital: CapitalState;
+  gameplay: GameplayState;
   chronicle: ChronicleState;
   ipAssets: IPAsset[];
   ipLicenses: IPLicenseContract[];

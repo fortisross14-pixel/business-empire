@@ -14,12 +14,15 @@ import { deriveSafetyScore, ensureInventoryLots } from "./productDynamics";
 import { ensureIPFoundation } from "./ip";
 import { TICKS_PER_YEAR } from "./types";
 import { ensureBrandVisual } from "./brands";
+import { createCapitalState } from "./capital";
+import { createGameplayState } from "./gameplay";
+import { ensureReviewScore } from "./productReview";
 
-export const SAVE_SCHEMA_VERSION = 18;
+export const SAVE_SCHEMA_VERSION = 24;
 export const AUTOSAVE_KEY = "market-sim:autosave";
 
 interface SaveEnvelopeV10 {
-  version: 18;
+  version: 24;
   savedAt: number;
   world: World;
 }
@@ -328,6 +331,67 @@ function migrateWorld(rawWorld: unknown, version: number): World | null {
   if (version <= 17) {
     world.player.trainingPrograms = world.player.trainingPrograms ?? [];
     for (const room of world.player.operatingRooms ?? []) room.facilityType = room.facilityType ?? (room.kind as any);
+  }
+
+  // v18 -> v19: Competitive World. Rival actions and quarterly rankings become durable
+  // company history rather than relying on the short rolling notification list.
+  world.competitiveReviews = world.competitiveReviews ?? [];
+  const competitorSets = [world.comps, ...Object.values(world.industryMarkets ?? {}).filter(Boolean).map((market) => market!.comps)];
+  for (const competitors of competitorSets) for (const competitor of competitors ?? []) {
+    competitor.actionHistory = competitor.actionHistory ?? [];
+    competitor.shareHistory = competitor.shareHistory ?? [];
+  }
+
+  // v19 -> v20: lightweight capital plus scenario, decision, consequence and achievement state.
+  // Existing companies enter the Bootstrap Brand journey without altering their cash or debt.
+  world.capital = world.capital ?? createCapitalState();
+  world.capital.relationships = world.capital.relationships ?? [];
+  world.capital.rounds = world.capital.rounds ?? [];
+  world.capital.dilutionPct = world.capital.dilutionPct ?? 0;
+  world.capital.lastRaiseTick = world.capital.lastRaiseTick ?? -9999;
+  if (!world.gameplay) {
+    world.gameplay = createGameplayState("bootstrap_brand");
+    world.gameplay.nextDecisionTick = Math.max(world.tick + 45, 70);
+  }
+  world.gameplay.pendingDecision = world.gameplay.pendingDecision ?? null;
+  world.gameplay.runSeed = world.gameplay.runSeed ?? Math.abs([...world.company].reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619), 2166136261) ^ world.tick);
+  world.gameplay.decisionHistory = world.gameplay.decisionHistory ?? [];
+  world.gameplay.delayedConsequences = world.gameplay.delayedConsequences ?? [];
+  world.gameplay.seenTemplates = world.gameplay.seenTemplates ?? [];
+  world.gameplay.nextDecisionTick = world.gameplay.nextDecisionTick ?? Math.max(world.tick + 45, 70);
+  world.gameplay.achievements = world.gameplay.achievements ?? [];
+  world.gameplay.outcomes = world.gameplay.outcomes ?? [];
+
+  // v20 -> v21: reversible product archiving, launch-derived category learning and seeded run variety.
+  world.player.productLearning = world.player.productLearning ?? {};
+  for (const sku of world.player.skus ?? []) {
+    sku.archived = sku.archived ?? false;
+    sku.marketStudyCount = sku.marketStudyCount ?? 0;
+  }
+
+  // v21 -> v22: decimal product reviews and retained, actionable market-study reports.
+  // Legacy category-learning values remain as research-coverage history, but no longer modify
+  // design quality; players improve by applying the lessons in their next brief.
+  for (const sku of world.player.skus ?? []) ensureReviewScore(sku);
+
+  // v22 -> v23: three new verticals are data-driven additions. Refresh shared material
+  // indices and create market runtimes for any newly active business without touching
+  // existing products, balances or historical learning.
+  if (version <= 22) {
+    world.materialPriceIndex = { ...defaultMaterialPriceIndex(), ...(world.materialPriceIndex ?? {}) };
+    for (const [industryId, business] of Object.entries(world.player.businesses ?? {})) if (business?.status === "active" && INDUSTRIES[industryId]) ensureIndustryMarket(world, industryId);
+  }
+
+  // v23 -> v24: game modes and the data-driven business-school campaign layer.
+  // Existing companies remain founder scenarios. Campaign progress itself lives in a
+  // separate career profile so restarting a case never erases previously earned stars.
+  world.mode = world.mode ?? "scenario";
+  world.campaign = world.campaign ?? null;
+  if (world.campaign) {
+    world.campaign.initialFacilityIds = world.campaign.initialFacilityIds ?? (world.player.operatingRooms ?? []).map((room) => room.id);
+    world.campaign.scriptedEventsSeen = world.campaign.scriptedEventsSeen ?? [];
+    world.campaign.awardedStars = world.campaign.awardedStars ?? 0;
+    world.campaign.completed = world.campaign.completed ?? false;
   }
 
   // Keep product-lead lineage even after transfers, departures and save migrations.

@@ -1,27 +1,49 @@
-import React from "react";
+import React, { useId } from "react";
 import { C, UI } from "../theme";
 
 export function LineChart({ series, height = 150, fmt = (v: number) => v.toFixed(0), zeroLine = false, markers = [] }:
-  { series: { data: number[]; color: string }[]; height?: number; fmt?: (v: number) => string; zeroLine?: boolean; markers?: { i: number }[] }) {
+  { series: { data: number[]; color: string; label?: string; area?: boolean }[]; height?: number; fmt?: (v: number) => string; zeroLine?: boolean; markers?: { i: number }[] }) {
+  const chartId = useId().replace(/:/g, "");
   const W = 520, H = height, pad = { l: 8, r: 8, t: 10, b: 16 };
   const all = series.flatMap((s) => s.data);
   if (!all.length) return <div style={{ height: H, color: C.faint, fontSize: 12, display: "flex", alignItems: "center" }}>no data yet…</div>;
   let min = Math.min(...all), max = Math.max(...all);
   if (zeroLine) { min = Math.min(min, 0); max = Math.max(max, 0); }
   if (min === max) { max += 1; min -= 1; }
-  const n = series[0].data.length;
+  const n = Math.max(...series.map((item) => item.data.length));
   const x = (i: number) => pad.l + (i / Math.max(1, n - 1)) * (W - pad.l - pad.r);
   const y = (v: number) => pad.t + (1 - (v - min) / (max - min)) * (H - pad.t - pad.b);
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block" }}>
+    <svg viewBox={`0 0 ${W} ${H}`} className="game-line-chart" style={{ width: "100%", height: H, display: "block", overflow: "visible" }}>
+      <defs>{series.map((s, si) => <linearGradient key={si} id={`area-${chartId}-${si}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={s.color} stopOpacity=".28"/><stop offset="1" stopColor={s.color} stopOpacity="0"/></linearGradient>)}</defs>
       {[0, .25, .5, .75, 1].map((f, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={pad.t + f * (H - pad.t - pad.b)} y2={pad.t + f * (H - pad.t - pad.b)} stroke={C.grid} />)}
       {markers.map((mk, i) => { const xi = x(mk.i); return <line key={"m" + i} x1={xi} x2={xi} y1={pad.t} y2={H - pad.b} stroke={C.amber} strokeWidth="1" strokeDasharray="2 3" opacity="0.6" />; })}
       {zeroLine && min < 0 && max > 0 && <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} stroke={C.faint} strokeDasharray="3 3" />}
-      {series.map((s, si) => <path key={si} d={s.data.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")} fill="none" stroke={s.color} strokeWidth="1.8" />)}
+      {series.map((s, si) => {
+        const line = s.data.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+        const area = s.data.length ? `${line} L${x(s.data.length - 1).toFixed(1)},${H - pad.b} L${x(0).toFixed(1)},${H - pad.b} Z` : "";
+        const last = s.data.at(-1);
+        return <g key={si}>{s.area && <path d={area} fill={`url(#area-${chartId}-${si})`} />}
+          <path className="chart-line-path" d={line} fill="none" stroke={s.color} strokeWidth={si === 0 ? "2.8" : "2"} strokeLinecap="round" strokeLinejoin="round" />
+          {last != null && <><circle cx={x(s.data.length - 1)} cy={y(last)} r={si === 0 ? 4 : 3} fill="#fff" stroke={s.color} strokeWidth="2"/><circle className="chart-pulse-dot" cx={x(s.data.length - 1)} cy={y(last)} r={si === 0 ? 7 : 5} fill="none" stroke={s.color} strokeWidth="1" opacity=".42"/></>}</g>;
+      })}
       <text x={pad.l} y={11} fill={C.faint} fontSize="9" fontFamily="ui-monospace">{fmt(max)}</text>
       <text x={pad.l} y={H - 4} fill={C.faint} fontSize="9" fontFamily="ui-monospace">{fmt(min)}</text>
     </svg>
   );
+}
+
+export function DonutChart({ segments, centerLabel, centerValue, size = 210 }: { segments: { label: string; value: number; color: string }[]; centerLabel: string; centerValue: string; size?: number }) {
+  const total = Math.max(.0001, segments.reduce((sum, segment) => sum + Math.max(0, segment.value), 0));
+  let cursor = 0;
+  const stops = segments.map((segment) => {
+    const start = cursor; cursor += Math.max(0, segment.value) / total * 100;
+    return `${segment.color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+  }).join(",");
+  return <div className="donut-wrap" style={{ width: size, height: size, position: "relative", flex: "0 0 auto" }}>
+    <div className="donut-chart" style={{ position: "absolute", inset: 0, borderRadius: "50%", background: `conic-gradient(from -90deg,${stops})`, boxShadow: "0 15px 32px rgba(18,47,75,.16),inset 0 0 0 1px rgba(255,255,255,.55)" }} />
+    <div style={{ position: "absolute", inset: "23%", borderRadius: "50%", background: "linear-gradient(145deg,#fff,#edf5fb)", boxShadow: "inset 0 0 0 1px rgba(130,157,178,.18),0 4px 12px rgba(17,45,70,.12)", display: "grid", placeItems: "center", textAlign: "center", padding: 8 }}><div><small style={{ display: "block", color: C.faint, fontSize: 8, fontWeight: 900, letterSpacing: .7 }}>{centerLabel}</small><b style={{ display: "block", color: C.ink, font: "900 24px ui-monospace,monospace", marginTop: 2 }}>{centerValue}</b></div></div>
+  </div>;
 }
 
 export const Stat = ({ label, value, color = C.ink, delta }: { label: string; value: string; color?: string; delta?: number }) => (
@@ -33,7 +55,7 @@ export const Stat = ({ label, value, color = C.ink, delta }: { label: string; va
 );
 
 export const Panel = ({ title, children, style }: { title?: string; children: React.ReactNode; style?: React.CSSProperties }) => (
-  <div style={{ background: "linear-gradient(180deg,#ffffff 0%,#fbfdff 100%)", border: `1px solid ${C.line}`, borderRadius: UI.radius.lg, padding: 18, marginBottom: 14, boxShadow: UI.shadow.card, ...style }}>
+  <div className="game-panel" style={{ background: "linear-gradient(180deg,#ffffff 0%,#fbfdff 100%)", border: `1px solid ${C.line}`, borderRadius: UI.radius.lg, padding: 18, marginBottom: 14, boxShadow: UI.shadow.card, ...style }}>
     {title && <div style={{ color: C.ink, fontSize: 14, fontWeight: 850, marginBottom: 13, paddingBottom: 10, borderBottom: `1px solid ${C.grid}`, letterSpacing: -.1 }}>{title}</div>}
     {children}
   </div>
@@ -57,7 +79,7 @@ export const TextInput = (props: React.InputHTMLAttributes<HTMLInputElement>) =>
 );
 export const ChoiceCard = ({ active, onClick, children, disabled, accent = C.cyan }:
   { active?: boolean; onClick?: () => void; children: React.ReactNode; disabled?: boolean; accent?: string }) => (
-  <button onClick={onClick} disabled={disabled} style={{ flex: 1, textAlign: "left", background: active ? "linear-gradient(180deg,#eef8ff 0%,#e6f3fd 100%)" : "linear-gradient(180deg,#fff 0%,#f7faff 100%)", border: `1px solid ${active ? accent : C.line}`, borderRadius: 12, padding: 14, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? .45 : 1, color: C.ink, boxShadow: active ? "0 4px 12px rgba(22,141,226,.10)" : "0 2px 8px rgba(19,34,56,.035)" }}>{children}</button>
+  <button className="choice-card" onClick={onClick} disabled={disabled} style={{ flex: 1, textAlign: "left", background: active ? "linear-gradient(180deg,#eef8ff 0%,#e6f3fd 100%)" : "linear-gradient(180deg,#fff 0%,#f7faff 100%)", border: `1px solid ${active ? accent : C.line}`, borderRadius: 12, padding: 14, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? .45 : 1, color: C.ink, boxShadow: active ? "0 4px 12px rgba(22,141,226,.10)" : "0 2px 8px rgba(19,34,56,.035)" }}>{children}</button>
 );
 export const Center = ({ children }: { children: React.ReactNode }) => (
   <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: "clamp(12px,4vw,24px)" }}>{children}</div>

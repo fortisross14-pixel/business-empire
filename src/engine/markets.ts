@@ -13,7 +13,7 @@ function buildCompetitors(cfg: IndustryConfig): Competitor[] {
       productKey: cfg.products[Math.min(i, Math.max(0, cfg.products.length - 1))]?.key ?? "",
     }],
     marketing: 80_000, marketingFocus: "all", cash: 1_000_000, exitedCells: [],
-    actionCooldown: 0, threatMemory: {},
+    actionCooldown: 0, threatMemory: {}, actionHistory: [], shareHistory: [],
   }));
 }
 

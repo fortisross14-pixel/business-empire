@@ -1,0 +1,359 @@
+{
+  "version": 3,
+  "columns": 5,
+  "rows": 5,
+  "cellPx": 320,
+  "transparent": true,
+  "assets": [
+    {
+      "id": "founder_office_1",
+      "file": "buildings/v3/founder_office_1.png",
+      "footprint": [
+        2,
+        2
+      ],
+      "pixels": [
+        900,
+        827
+      ],
+      "row": 0,
+      "column": 0
+    },
+    {
+      "id": "founder_office_2",
+      "file": "buildings/v3/founder_office_2.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        900,
+        807
+      ],
+      "row": 0,
+      "column": 1
+    },
+    {
+      "id": "founder_office_3",
+      "file": "buildings/v3/founder_office_3.png",
+      "footprint": [
+        4,
+        4
+      ],
+      "pixels": [
+        900,
+        844
+      ],
+      "row": 0,
+      "column": 2
+    },
+    {
+      "id": "founder_office_4",
+      "file": "buildings/v3/founder_office_4.png",
+      "footprint": [
+        5,
+        5
+      ],
+      "pixels": [
+        900,
+        843
+      ],
+      "row": 0,
+      "column": 3
+    },
+    {
+      "id": "design_studio",
+      "file": "buildings/v3/design_studio.png",
+      "footprint": [
+        2,
+        2
+      ],
+      "pixels": [
+        896,
+        900
+      ],
+      "row": 0,
+      "column": 4
+    },
+    {
+      "id": "beauty_center_1",
+      "file": "buildings/v3/beauty_center_1.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        900,
+        897
+      ],
+      "row": 1,
+      "column": 0
+    },
+    {
+      "id": "beauty_center_2",
+      "file": "buildings/v3/beauty_center_2.png",
+      "footprint": [
+        4,
+        4
+      ],
+      "pixels": [
+        900,
+        897
+      ],
+      "row": 1,
+      "column": 1
+    },
+    {
+      "id": "toy_center_1",
+      "file": "buildings/v3/toy_center_1.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        900,
+        877
+      ],
+      "row": 1,
+      "column": 2
+    },
+    {
+      "id": "toy_center_2",
+      "file": "buildings/v3/toy_center_2.png",
+      "footprint": [
+        4,
+        4
+      ],
+      "pixels": [
+        900,
+        877
+      ],
+      "row": 1,
+      "column": 3
+    },
+    {
+      "id": "research_center_1",
+      "file": "buildings/v3/research_center_1.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        900,
+        828
+      ],
+      "row": 1,
+      "column": 4
+    },
+    {
+      "id": "research_center_2",
+      "file": "buildings/v3/research_center_2.png",
+      "footprint": [
+        4,
+        4
+      ],
+      "pixels": [
+        900,
+        828
+      ],
+      "row": 2,
+      "column": 0
+    },
+    {
+      "id": "research_center_3",
+      "file": "buildings/v3/research_center_3.png",
+      "footprint": [
+        5,
+        5
+      ],
+      "pixels": [
+        900,
+        828
+      ],
+      "row": 2,
+      "column": 1
+    },
+    {
+      "id": "training_center_1",
+      "file": "buildings/v3/training_center_1.png",
+      "footprint": [
+        2,
+        2
+      ],
+      "pixels": [
+        900,
+        757
+      ],
+      "row": 2,
+      "column": 2
+    },
+    {
+      "id": "training_center_2",
+      "file": "buildings/v3/training_center_2.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        900,
+        757
+      ],
+      "row": 2,
+      "column": 3
+    },
+    {
+      "id": "warehouse_small",
+      "file": "buildings/v3/warehouse_small.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        900,
+        762
+      ],
+      "row": 2,
+      "column": 4
+    },
+    {
+      "id": "warehouse_medium",
+      "file": "buildings/v3/warehouse_medium.png",
+      "footprint": [
+        4,
+        4
+      ],
+      "pixels": [
+        900,
+        792
+      ],
+      "row": 3,
+      "column": 0
+    },
+    {
+      "id": "warehouse_large",
+      "file": "buildings/v3/warehouse_large.png",
+      "footprint": [
+        5,
+        5
+      ],
+      "pixels": [
+        900,
+        792
+      ],
+      "row": 3,
+      "column": 1
+    },
+    {
+      "id": "brand_studio",
+      "file": "buildings/v3/brand_studio.png",
+      "footprint": [
+        2,
+        2
+      ],
+      "pixels": [
+        891,
+        900
+      ],
+      "row": 3,
+      "column": 2
+    },
+    {
+      "id": "hr_office",
+      "file": "buildings/v3/hr_office.png",
+      "footprint": [
+        2,
+        2
+      ],
+      "pixels": [
+        900,
+        890
+      ],
+      "row": 3,
+      "column": 3
+    },
+    {
+      "id": "marketing_office",
+      "file": "buildings/v3/marketing_office.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        877,
+        900
+      ],
+      "row": 3,
+      "column": 4
+    },
+    {
+      "id": "logistics_office",
+      "file": "buildings/v3/logistics_office.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        900,
+        748
+      ],
+      "row": 4,
+      "column": 0
+    },
+    {
+      "id": "consumer_insights",
+      "file": "buildings/v3/consumer_insights.png",
+      "footprint": [
+        3,
+        3
+      ],
+      "pixels": [
+        900,
+        808
+      ],
+      "row": 4,
+      "column": 1
+    },
+    {
+      "id": "cold_storage",
+      "file": "buildings/v3/cold_storage.png",
+      "footprint": [
+        4,
+        4
+      ],
+      "pixels": [
+        900,
+        786
+      ],
+      "row": 4,
+      "column": 2
+    },
+    {
+      "id": "distribution_hub",
+      "file": "buildings/v3/distribution_hub.png",
+      "footprint": [
+        5,
+        5
+      ],
+      "pixels": [
+        900,
+        879
+      ],
+      "row": 4,
+      "column": 3
+    },
+    {
+      "id": "executive_wing",
+      "file": "buildings/v3/executive_wing.png",
+      "footprint": [
+        4,
+        4
+      ],
+      "pixels": [
+        900,
+        853
+      ],
+      "row": 4,
+      "column": 4
+    }
+  ]
+}

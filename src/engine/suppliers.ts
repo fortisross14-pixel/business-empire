@@ -101,6 +101,15 @@ export const SUPPLIERS: SupplierDef[] = [
     manufacturingFamilies: ["electronics_assembly", "plastic_molding", "assembly"],
     desc: "Higher-cost integrated electronics partner with stronger process control and testing discipline.",
   },
+  { id:"pantryworks",name:"PantryWorks Foods",label:"Food generalist",costMult:1,leadTimeMult:1,qualityAdj:0,monthlyCapacity:180000,reliability:.9,manufacturingFamilies:["food_processing","filling_packaging"],desc:"Balanced high-volume partner for shelf-stable food and snacks." },
+  { id:"culinarylabs",name:"Culinary Labs",label:"Premium food",costMult:1.16,leadTimeMult:1.08,qualityAdj:.05,monthlyCapacity:85000,reliability:.96,manufacturingFamilies:["food_processing","filling_packaging"],desc:"Premium pilot-kitchen manufacturer with excellent taste and process control." },
+  { id:"fastbatch",name:"FastBatch Foods",label:"Fast food",costMult:1.1,leadTimeMult:.7,qualityAdj:-.018,monthlyCapacity:220000,reliability:.84,manufacturingFamilies:["food_processing","filling_packaging"],desc:"Fast turnaround and flexible runs, with a small quality trade-off." },
+  { id:"threadline",name:"Threadline Manufacturing",label:"Apparel generalist",costMult:1,leadTimeMult:1,qualityAdj:0,monthlyCapacity:120000,reliability:.9,manufacturingFamilies:["textile","assembly"],desc:"Balanced cut-and-sew partner for everyday apparel." },
+  { id:"atelierworks",name:"AtelierWorks",label:"Premium apparel",costMult:1.2,leadTimeMult:1.12,qualityAdj:.06,monthlyCapacity:55000,reliability:.96,manufacturingFamilies:["textile","assembly"],desc:"Craft-led production for premium fabric, fit and finishing." },
+  { id:"velocitytextiles",name:"Velocity Textiles",label:"Fast fashion",costMult:.94,leadTimeMult:.72,qualityAdj:-.035,monthlyCapacity:190000,reliability:.82,manufacturingFamilies:["textile","assembly"],desc:"Speed and scale for trend drops, at the cost of consistency." },
+  { id:"circuitforge",name:"CircuitForge",label:"Electronics generalist",costMult:1.03,leadTimeMult:1,qualityAdj:.005,monthlyCapacity:90000,reliability:.91,manufacturingFamilies:["electronics_assembly","plastic_molding","assembly"],desc:"Integrated electronics, enclosure and final-assembly partner." },
+  { id:"precisiondevice",name:"Precision Device Labs",label:"Premium electronics",costMult:1.22,leadTimeMult:1.15,qualityAdj:.065,monthlyCapacity:48000,reliability:.97,manufacturingFamilies:["electronics_assembly","plastic_molding","assembly"],desc:"Expensive reliability-focused manufacturer for demanding devices." },
+  { id:"voltvolume",name:"VoltVolume Manufacturing",label:"Volume electronics",costMult:.9,leadTimeMult:.84,qualityAdj:-.045,monthlyCapacity:160000,reliability:.8,manufacturingFamilies:["electronics_assembly","plastic_molding","assembly"],desc:"Aggressive unit economics and scale with greater defect and disruption risk." },
 ];
 
 export const DEFAULT_SUPPLIER_ID = "flexform";
