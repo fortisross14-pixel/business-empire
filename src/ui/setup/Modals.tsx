@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { C, bigBtn, ctrlBtn, fmtMoney } from "../theme";
 import { DisabledReason, FieldLabel, TextInput, ChoiceCard, Econ, StarRating, NumberInput, SelectInput } from "../components";
 import { PACKAGING, RETAIL_PARTNERS, INDUSTRIES } from "../../engine/industries";
@@ -119,12 +119,14 @@ export function ProductCreator({ world, baseSku, onCreate, onClose }: { world: W
   };
 
   return <Modal onClose={onClose} title={baseSku ? <>Design next version — <span style={{ color: selectedBrand.color }}>{baseSku.name}</span></> : <>Design new product — <span style={{ color: selectedBrand.color }}>{selectedBrand.name}</span></>} wide>
-    <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-      <div style={{ flex: 1, height: 7, borderRadius: 99, background: step >= 1 ? C.violet : C.grid }} />
-      <div style={{ flex: 1, height: 7, borderRadius: 99, background: step >= 2 ? C.violet : C.grid }} />
+    <div className="product-creator-intro">
+      <div className="product-creator-art" aria-hidden="true">{step === 1 ? "✦" : "🧪"}</div>
+      <div><strong>{step === 1 ? "Write the product brief" : "Build the proposition"}</strong><span>Design first. Manufacturing, batch size, selling price and channels come after the product is ready.</span></div>
+      <div className="product-creator-step" aria-label={`Step ${step} of 2`}><b>{step}</b><span>of 2</span></div>
     </div>
-    <div style={{ padding: "10px 12px", background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.dim, fontSize: 12, lineHeight: 1.55, marginBottom: 14 }}>
-      <b style={{ color: C.ink }}>Design first.</b> Manufacturer, production standard, batch size, selling price and retail channels are decided only after the design is complete.
+    <div className="product-creator-progress" aria-hidden="true">
+      <div className="active" />
+      <div className={step >= 2 ? "active" : ""} />
     </div>
 
     {step === 1 ? <div>
@@ -225,7 +227,8 @@ export function ContractModal({ world, onSign, onClose }: { world: World; onSign
   const hasExternalCapability = canNegotiatePartner(world, "megazon");
   return (
     <Modal onClose={onClose} title="Distribution Partners" wide>
-      {!hasExternalCapability && <div style={{ marginBottom: 14, padding: 10, background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, color: "#9a3412", fontSize: 11.5, lineHeight: 1.45 }}>External retailers require someone to own the commercial relationship: seat a Sourcing / Operations or Strategy specialist. A Sourcing Office adds capacity later, but an empty building cannot negotiate. Your own website can still be opened immediately.</div>}
+      <div className="partner-modal-hero"><span aria-hidden="true">🏪</span><div><b>Put products where customers shop</b><small>Compare reach, margin cost and payment terms before you sign.</small></div></div>
+      {!hasExternalCapability && <div className="partner-warning"><b>Commercial owner required</b><span>Seat a Sourcing / Operations or Strategy specialist to negotiate external retail. Your own website can still open immediately.</span></div>}
       {signed.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ color: C.dim, fontSize: 11, textTransform: "uppercase", letterSpacing: .6, marginBottom: 6 }}>Active contracts</div>
@@ -238,8 +241,8 @@ export function ContractModal({ world, onSign, onClose }: { world: World; onSign
       {available.length === 0 && <div style={{ color: C.faint, fontSize: 13 }}>All available partners are signed or none match your active businesses.</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10, maxHeight: 400, overflowY: "auto" }}>
         {available.map((p) => (
-          <div key={p.id} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 10, padding: 14 }}>
-            <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{p.name}</div>
+          <div className="partner-offer-card" key={p.id} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 10, padding: 14 }}>
+            <div className="partner-offer-head"><span aria-hidden="true">{p.id === "megazon" ? "📦" : p.id.includes("boutique") ? "💎" : "🛍️"}</span><div style={{ fontWeight: 800, fontSize: 15, color: C.ink }}>{p.name}</div></div>
             <div style={{ color: C.dim, fontSize: 11, marginTop: 2, marginBottom: 6 }}>{p.desc}</div>
             {p.industries && <div style={{ color: C.violet, fontSize: 10, marginBottom: 5 }}>Best for: {p.industries.map((id) => INDUSTRIES[id]?.label ?? id).join(", ")}</div>}
             <div style={{ fontSize: 11, color: C.faint, display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
@@ -261,11 +264,45 @@ export function ContractModal({ world, onSign, onClose }: { world: World; onSign
 }
 
 function Modal({ children, onClose, title, wide }: { children: React.ReactNode; onClose: () => void; title: React.ReactNode; wide?: boolean }) {
+  const titleId = useId();
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key !== "Tab" || !cardRef.current) return;
+      const focusable = Array.from(cardRef.current.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+      if (!focusable.length) return;
+      const first = focusable[0]; const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.setTimeout(() => cardRef.current?.querySelector<HTMLElement>("input:not([disabled]), select:not([disabled]), button:not(.game-modal-close):not([disabled])")?.focus(), 0);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", onKeyDown); };
+  }, [onClose]);
   return (
-    <div className="game-modal-backdrop" style={{ position: "fixed", inset: 0, background: "rgba(4,8,12,.8)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 140 }}>
-      <div className={`game-modal-card${wide ? " wide" : ""}`} style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: 22, width: "100%", maxWidth: wide ? 760 : 560, maxHeight: "92vh", overflow: "auto" }}>
+    <div className="game-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} style={{ position: "fixed", inset: 0, background: "rgba(4,18,33,.78)", backdropFilter: "blur(9px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, zIndex: 240 }}>
+      <style>{`
+        .game-modal-card{position:relative;color:#173d51;background:linear-gradient(155deg,#fff 0%,#f4faff 100%)!important;border:1px solid rgba(126,189,228,.9)!important;border-top:6px solid #159ed9!important;border-radius:22px!important;box-shadow:0 32px 90px rgba(0,15,30,.48);scrollbar-color:#65badf #e5f1f7}
+        .game-modal-card:before{content:"";position:absolute;right:-65px;top:-85px;width:210px;height:210px;border-radius:50%;background:radial-gradient(circle,rgba(63,190,236,.18),transparent 69%);pointer-events:none}
+        .game-modal-head{position:relative;align-items:center;padding-bottom:13px;border-bottom:1px solid #d9e8ef}
+        .game-modal-head h2{color:#123b56;font-size:clamp(20px,3vw,27px)!important;line-height:1.12;letter-spacing:-.35px}
+        .game-modal-close{min-width:44px!important;min-height:44px!important;padding:8px!important;border-radius:13px!important;font-size:18px!important;line-height:1!important}
+        .game-modal-card button{min-height:44px}
+        .game-modal-card [style*="font-size: 7"],.game-modal-card [style*="font-size: 8"],.game-modal-card [style*="font-size: 9"],.game-modal-card [style*="font-size: 10"],.game-modal-card [style*="font-size: 11"]{font-size:12px!important;line-height:1.42!important}
+        .game-modal-card select,.game-modal-card input,.game-modal-card textarea{min-height:44px;font-size:16px}
+        .game-modal-card button:focus-visible,.game-modal-card input:focus-visible,.game-modal-card select:focus-visible{outline:4px solid rgba(25,160,218,.3);outline-offset:2px}
+        .product-creator-intro{display:grid;grid-template-columns:58px 1fr auto;gap:13px;align-items:center;margin-bottom:11px;padding:13px 15px;border:1px solid #c9e4f2;border-radius:16px;background:linear-gradient(115deg,#e7f8ff,#fff9de)}
+        .product-creator-art{width:54px;height:54px;display:grid;place-items:center;border-radius:15px;color:#fff;background:linear-gradient(145deg,#2ec6ef,#4067e8);box-shadow:0 6px 0 #24549d;font-size:28px}.product-creator-intro strong,.product-creator-intro span{display:block}.product-creator-intro strong{font-size:16px}.product-creator-intro span{margin-top:3px;color:#587482;font-size:12px;line-height:1.45}.product-creator-step{min-width:50px;text-align:center;color:#607985}.product-creator-step b{display:block;color:#176f9b;font-size:24px;line-height:1}.product-creator-step span{font-size:11px}.product-creator-progress{display:flex;gap:7px;margin:0 2px 16px}.product-creator-progress div{height:7px;flex:1;border-radius:99px;background:#dcebf2}.product-creator-progress div.active{background:linear-gradient(90deg,#20b9e8,#6653df);box-shadow:0 2px 7px rgba(62,102,224,.22)}
+        .partner-modal-hero{display:flex;gap:13px;align-items:center;margin-bottom:14px;padding:13px 15px;border-radius:15px;color:white;background:linear-gradient(120deg,#0c426a,#147fa6)}.partner-modal-hero>span{width:48px;height:48px;display:grid;place-items:center;flex:0 0 auto;border-radius:14px;background:rgba(255,255,255,.17);font-size:27px}.partner-modal-hero b,.partner-modal-hero small{display:block}.partner-modal-hero b{font-size:16px}.partner-modal-hero small{margin-top:3px;color:#caecf8;font-size:12px;line-height:1.4}.partner-warning{display:grid;gap:3px;margin-bottom:14px;padding:11px 13px;border:1px solid #f0c57a;border-left:6px solid #e99b22;border-radius:12px;background:#fff8e8;color:#7c5014}.partner-warning b{font-size:13px}.partner-warning span{font-size:12px;line-height:1.45}.partner-offer-card{background:linear-gradient(155deg,#fff,#f1f9fd)!important;border-radius:15px!important;box-shadow:0 6px 16px rgba(18,68,94,.08);transition:transform .14s ease,box-shadow .14s ease}.partner-offer-card:hover{transform:translateY(-2px);box-shadow:0 10px 23px rgba(18,68,94,.15)}.partner-offer-head{display:flex;align-items:center;gap:9px}.partner-offer-head>span{width:40px;height:40px;display:grid;place-items:center;border-radius:11px;background:#e4f5fc;font-size:22px}
+        @media(max-width:640px){.game-modal-backdrop{padding:0!important;align-items:flex-end!important}.game-modal-card{width:100%!important;max-width:none!important;max-height:calc(100dvh - 12px)!important;padding:16px 14px calc(18px + env(safe-area-inset-bottom))!important;border-radius:22px 22px 0 0!important}.game-modal-head{position:sticky;top:-16px;z-index:8;margin:-2px 0 13px!important;padding:12px 0 10px;background:#fff}.game-modal-card [style*="grid-template-columns: repeat(3"]{grid-template-columns:1fr!important}.game-modal-card [style*="minmax(280px"]{grid-template-columns:1fr!important}.game-modal-card [style*="justify-content: flex-end"]{flex-wrap:wrap}.game-modal-card [style*="justify-content: flex-end"]>button,.game-modal-card [style*="justify-content: flex-end"]>div{flex:1 1 150px}.game-modal-card [style*="justify-content: flex-end"]>div>button{width:100%}.product-creator-intro{grid-template-columns:48px 1fr}.product-creator-art{width:46px;height:46px}.product-creator-step{display:none}.partner-modal-hero{padding:11px}}
+        @media(prefers-reduced-motion:reduce){.game-modal-card *{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+      `}</style>
+      <div ref={cardRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className={`game-modal-card${wide ? " wide" : ""}`} style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: 22, width: "100%", maxWidth: wide ? 900 : 620, maxHeight: "92vh", overflow: "auto" }}>
         <div className="game-modal-head" style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-          <h2 style={{ margin: 0, fontSize: 20 }}>{title}</h2><button className="game-modal-close" style={ctrlBtn} onClick={onClose}>✕</button>
+          <h2 id={titleId} style={{ margin: 0, fontSize: 20 }}>{title}</h2><button type="button" aria-label="Close dialog" className="game-modal-close" style={ctrlBtn} onClick={onClose}>✕</button>
         </div>
         {children}
       </div>

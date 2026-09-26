@@ -211,6 +211,28 @@ export interface InventoryLot {
   unitCost: number;
 }
 
+// Product telemetry is intentionally stored on the SKU so product pages can show useful
+// history without reconstructing it from the company-wide P&L. Both fields on SKU are optional
+// so saves created before telemetry was introduced remain valid without an eager migration.
+export interface SkuDailySalesPoint {
+  tick: number;
+  units: number;
+  netRevenue: number;
+  contribution: number;
+  inventory: number;
+}
+
+export interface SkuChannelSalesAttribution {
+  partnerId: string;
+  partnerName: string;
+  channelType: ChannelType;
+  units: number;
+  grossRevenue: number;
+  netRevenue: number;
+  contribution: number;
+  lastSaleTick: number;
+}
+
 export interface SKU {
   id: string;
   name: string;
@@ -280,6 +302,8 @@ export interface SKU {
   lastStockoutAlertTick?: number;
   lastLowStockAlertTick?: number;
   contributionTotal: number;
+  salesHistory?: SkuDailySalesPoint[]; // rolling daily actuals, capped at one in-game year (360 points)
+  channelSalesByPartner?: Record<string, SkuChannelSalesAttribution>; // lifetime actuals by contracted retail partner
 }
 
 export type MarketLessonKind = "priority" | "ip" | "quality" | "price" | "channel" | "audience" | "awareness" | "operations" | "margin";

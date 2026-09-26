@@ -4,7 +4,7 @@ import type {
 import { TICKS_PER_QUARTER, TICK_RATE_SCALE, TICKS_PER_MONTH, TICKS_PER_YEAR, computeProductRarity } from "./types";
 import { AXES, AXIS_KEYS, axisPos, clamp, ease, sum, CHANNEL_TYPES, INDUSTRIES, MARKETING_AGENCIES } from "./industries";
 import { fit, effectiveTarget, applyDriftAndShocks, needMatch, effectiveAttributes, packagingResonance } from "./cube";
-import { distributionMetricsForSku, partnerFitForCell } from "./distribution";
+import { channelMixForSku, distributionMetricsForSku, partnerFitForCell } from "./distribution";
 import { productionLeadDays } from "./capacity";
 import { runCompetitorBrains, competitorAwareness } from "./competitorBrain";
 import { cellsInSegment } from "./segments";
@@ -33,6 +33,62 @@ const REF_PRICE = 45;
 let adjacencyCache: { size: number; adj: Record<number, number[]> } | null = null;
 const cellKey = (c: { coord: { gender: string; age: string; class: string; leaning: string; geography: string; family: string } }) =>
   `${c.coord.gender}|${c.coord.age}|${c.coord.class}|${c.coord.leaning}|${c.coord.geography}|${c.coord.family}`;
+
+const SKU_SALES_HISTORY_LIMIT = TICKS_PER_YEAR;
+
+// Record actual (not quarterly run-rate) product performance and attribute it to the exact
+// partners carrying the SKU. Lazy initialization doubles as the migration path for older saves.
+function recordSkuSalesTelemetry(w: World, sku: SKU, sold: number): void {
+  const mix = channelMixForSku(w, sku);
+  let netRevenue = 0;
+  let contribution = 0;
+
+  if (sold > 0 && mix.length) {
+    sku.channelSalesByPartner = sku.channelSalesByPartner ?? {};
+    for (const row of mix) {
+      const units = sold * row.share;
+      const gross = units * row.grossRevenuePerUnit;
+      const net = units * row.netRevenuePerUnit;
+      const partnerContribution = units * row.contributionPerUnit;
+      netRevenue += net;
+      contribution += partnerContribution;
+      const current = sku.channelSalesByPartner[row.partnerId];
+      if (current) {
+        current.partnerName = row.partnerName;
+        current.channelType = row.channelType;
+        current.units += units;
+        current.grossRevenue += gross;
+        current.netRevenue += net;
+        current.contribution += partnerContribution;
+        current.lastSaleTick = w.tick;
+      } else {
+        sku.channelSalesByPartner[row.partnerId] = {
+          partnerId: row.partnerId,
+          partnerName: row.partnerName,
+          channelType: row.channelType,
+          units,
+          grossRevenue: gross,
+          netRevenue: net,
+          contribution: partnerContribution,
+          lastSaleTick: w.tick,
+        };
+      }
+    }
+  }
+
+  // No contracted mix normally means no sales. Keep the history internally consistent if an old
+  // or unusual save still produces units before contracts are repaired.
+  if (sold > 0 && !mix.length) {
+    netRevenue = sold * sku.listPrice;
+    contribution = netRevenue - sold * sku.unitCost;
+  }
+
+  sku.salesHistory = sku.salesHistory ?? [];
+  sku.salesHistory.push({ tick: w.tick, units: sold, netRevenue, contribution, inventory: sku.inventory });
+  if (sku.salesHistory.length > SKU_SALES_HISTORY_LIMIT) {
+    sku.salesHistory.splice(0, sku.salesHistory.length - SKU_SALES_HISTORY_LIMIT);
+  }
+}
 
 function skuEffectiveTarget(w: World, sku: SKU) {
   const pt = w.cfg.products.find((p) => p.key === sku.productKey);
@@ -501,6 +557,7 @@ export function step(w: World): World {
     // lifetime accumulators use ACTUAL per-tick amounts, not annualized run-rates
     sku.unitsSoldTotal += sold;
     sku.contributionTotal += (sold * sku.listPrice * (1 - dist.marginCut)) - (sold * sku.unitCost);
+    recordSkuSalesTelemetry(w, sku, sold);
     const daysCover = demandTick > 0 ? sku.inventory / demandTick : 999;
     if (lost > 0.25 && (sku.lastStockoutAlertTick == null || w.tick - sku.lastStockoutAlertTick >= 30)) {
       sku.lastStockoutAlertTick = w.tick;
@@ -564,6 +621,7 @@ export function step(w: World): World {
       if (net > 0) receivableAdds.push({ amount: net / TICKS_PER_QUARTER, paymentDays: dist.paymentDays });
       sku.unitsSoldTotal += sold;
       sku.contributionTotal += (sold * sku.listPrice * (1 - dist.marginCut)) - (sold * sku.unitCost);
+      recordSkuSalesTelemetry(w, sku, sold);
       const daysCover = demandTick > 0 ? sku.inventory / demandTick : 999;
       if (lost > 0.25 && (sku.lastStockoutAlertTick == null || w.tick - sku.lastStockoutAlertTick >= 30)) {
         sku.lastStockoutAlertTick = w.tick;
@@ -584,6 +642,11 @@ export function step(w: World): World {
     onlineCoverage = onlineWeighted / distributionWeight;
   }
   const skuResults: SkuResult[] = w.player.skus.map((sku) => skuResultById[sku.id] ?? ({ units: 0, demandUnits: 0, lostUnits: 0, revenue: 0, gross: 0, margin: 0, inventory: sku.inventory, daysCover: 999, channelCutPct: 0, paymentDays: 0 }));
+  // Products outside an active market still receive a zero-sales point so their 360-day chart has
+  // a continuous time axis (and inventory changes remain visible).
+  for (const sku of w.player.skus) {
+    if (!skuResultById[sku.id]) recordSkuSalesTelemetry(w, sku, 0);
+  }
   accrueIPRoyaltiesAndDynamics(w, skuResults);
   w.player.lostSales += lostTick;
 

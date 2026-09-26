@@ -1,4 +1,4 @@
-import type { AxisKey, Cell, Contract, SKU, World } from "./types";
+import type { AxisKey, Cell, ChannelType, Contract, SKU, World } from "./types";
 import { AXES, CHANNEL_TYPES, RETAIL_PARTNERS, clamp, sum } from "./industries";
 import { contractAwarenessBoost, contractReach } from "./economics";
 import { retailerAffinity } from "./productCatalog";
@@ -13,9 +13,62 @@ export interface DistributionMetrics {
   paymentDays: number;
 }
 
+export interface SkuChannelMixEntry {
+  partnerId: string;
+  partnerName: string;
+  channelType: ChannelType;
+  share: number;
+  reach: number;
+  productAffinity: number;
+  marginCut: number;
+  paymentDays: number;
+  slotting: number;
+  grossRevenuePerUnit: number;
+  netRevenuePerUnit: number;
+  contributionPerUnit: number;
+}
+
 export function contractsForSku(w: World, sku: SKU): Contract[] {
   const ids = new Set(sku.assignedPartnerIds ?? []);
   return w.player.contracts.filter((c) => ids.has(c.partnerId));
+}
+
+// Deterministic partner mix for both simulation attribution and product-page run-rate estimates.
+// Shopper volume follows partner reach and product/retailer affinity; each resulting row retains
+// that contract's own economics so the UI can estimate units, revenue and contribution by channel.
+export function channelMixForSku(w: World, sku: SKU): SkuChannelMixEntry[] {
+  const rows = contractsForSku(w, sku)
+    .map((contract) => {
+      const partner = RETAIL_PARTNERS.find((candidate) => candidate.id === contract.partnerId);
+      const reach = contractReach(contract);
+      const productAffinity = Math.max(0, retailerAffinity(sku.productKey, contract.partnerId, partner?.category, contract.type));
+      return { contract, reach, productAffinity, weight: reach * productAffinity };
+    })
+    // Stable ordering makes rounding/remainders deterministic regardless of contract insertion order.
+    .sort((a, b) => a.contract.partnerId.localeCompare(b.contract.partnerId));
+
+  if (!rows.length) return [];
+  const totalWeight = sum(rows.map((row) => row.weight));
+  const fallbackShare = 1 / rows.length;
+  return rows.map(({ contract, reach, productAffinity, weight }) => {
+    const share = totalWeight > 0 ? weight / totalWeight : fallbackShare;
+    const grossRevenuePerUnit = Math.max(0, sku.listPrice);
+    const netRevenuePerUnit = grossRevenuePerUnit * (1 - contract.marginCut);
+    return {
+      partnerId: contract.partnerId,
+      partnerName: contract.partnerName,
+      channelType: contract.type,
+      share,
+      reach,
+      productAffinity,
+      marginCut: contract.marginCut,
+      paymentDays: contract.paymentDays,
+      slotting: contract.slotting,
+      grossRevenuePerUnit,
+      netRevenuePerUnit,
+      contributionPerUnit: netRevenuePerUnit - sku.unitCost,
+    };
+  });
 }
 
 export function distributionMetricsForSku(w: World, sku: SKU): DistributionMetrics {
@@ -26,8 +79,9 @@ export function distributionMetricsForSku(w: World, sku: SKU): DistributionMetri
   const reach = clamp(reachSum / 1.35);
   const onlineCoverage = clamp(sum(contracts.map((c, i) => reaches[i] * CHANNEL_TYPES[c.type].online)));
   const awarenessBoost = sum(contracts.map((c, i) => contractAwarenessBoost(c) * reaches[i]));
-  const marginCut = reachSum > 0 ? sum(contracts.map((c, i) => c.marginCut * reaches[i])) / reachSum : 0;
-  const paymentDays = reachSum > 0 ? sum(contracts.map((c, i) => c.paymentDays * reaches[i])) / reachSum : 0;
+  const channelMix = channelMixForSku(w, sku);
+  const marginCut = sum(channelMix.map((row) => row.marginCut * row.share));
+  const paymentDays = sum(channelMix.map((row) => row.paymentDays * row.share));
   return { contracts, reach, onlineCoverage, awarenessBoost, marginCut, paymentDays };
 }
 

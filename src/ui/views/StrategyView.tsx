@@ -1,174 +1,116 @@
 import React from "react";
 import { C, fmtMoney, fmtPct } from "../theme";
-import { Panel } from "../components";
 import { computeSwot, computePorter, computeBcg, computeBoardMemo, computeProductAnalysis, type BcgClass } from "../../engine/strategy";
 import type { World } from "../../engine/types";
 
+type StrategyTab = "brief" | "landscape" | "portfolio" | "products";
+
 export function StrategyView({ world }: { world: World }) {
-  if (world.player.intelDept < 2) {
-    return (
-      <Panel title="Strategy Reports">
-        <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6 }}>
-          Your Strategy / Intelligence team is not large enough for strategic analysis. Add and seat more Strategy staff on the Campus.
-        </div>
-      </Panel>
-    );
-  }
+  const [tab, setTab] = React.useState<StrategyTab>("brief");
+  if (world.player.intelDept < 2) return <div className="strategy-room strategy-locked">
+    <section className="strategy-lock-hero"><img src="/assets/ui/backgrounds/market-command.png" alt="" /><div className="strategy-lock-copy">
+      <span>STRATEGY ROOM</span><h2>Build the team that can see around corners.</h2>
+      <p>Strategic reports unlock when your Strategy / Intelligence department reaches level 2. Add specialists and seat them on the Campus to turn operating data into a board-ready view.</p>
+      <div className="strategy-lock-requirement"><i>🔒</i><div><b>Department level 2 required</b><small>Grow and seat your Strategy team on the Campus.</small></div></div>
+    </div></section><StrategyStyles />
+  </div>;
+
   const swot = computeSwot(world);
   const forces = computePorter(world);
   const bcg = computeBcg(world);
   const memo = computeBoardMemo(world);
+  const productAnalysis = computeProductAnalysis(world);
+  const pressure = forces.length ? forces.reduce((sum, force) => sum + force.pressure, 0) / forces.length : 0;
+  const opportunityCount = swot.opportunities.length;
+  const activeProducts = world.player.skus.filter((sku) => !sku.archived).length;
+  const tabs: { id: StrategyTab; icon: string; label: string; detail: string }[] = [
+    { id: "brief", icon: "♛", label: "Board brief", detail: "What needs a decision" },
+    { id: "landscape", icon: "◈", label: "Market landscape", detail: "SWOT and five forces" },
+    { id: "portfolio", icon: "✦", label: "Portfolio", detail: "Growth versus share" },
+    { id: "products", icon: "◎", label: "Product fit", detail: "Who each product serves" },
+  ];
 
-  return (
-    <div>
-      <Panel title="Board Memo — this quarter">
-        <div style={{ color: C.ink, fontSize: 16, fontWeight: 700, marginBottom: 10 }}>{memo.headline}</div>
-        {memo.whatHappened.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ color: C.dim, fontSize: 11, textTransform: "uppercase", letterSpacing: .6, marginBottom: 6 }}>What happened</div>
-            {memo.whatHappened.map((h, i) => <div key={i} style={{ color: C.ink, fontSize: 13, lineHeight: 1.5, marginBottom: 4 }}>• {h}</div>)}
-          </div>
-        )}
-        <div>
-          <div style={{ color: C.amber, fontSize: 11, textTransform: "uppercase", letterSpacing: .6, marginBottom: 6 }}>Strategic issues — your call</div>
-          {memo.issues.map((q, i) => (
-            <div key={i} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.amber}`, borderRadius: 6, padding: "8px 12px", marginBottom: 6, color: C.ink, fontSize: 13, lineHeight: 1.5 }}>{q}</div>
-          ))}
-        </div>
-        <div style={{ marginTop: 10, color: C.faint, fontSize: 11 }}>These frame the dilemma. The decision is yours — there's no “correct” button.</div>
-      </Panel>
+  return <div className="strategy-room">
+    <section className="strategy-hero"><img src="/assets/ui/backgrounds/market-command.png" alt="" /><div className="strategy-hero-copy">
+      <span>EXECUTIVE STRATEGY ROOM</span><h2>{memo.headline}</h2><p>Use evidence from your live company to frame the dilemma. The reports show the trade-off; the decision is still yours.</p>
+    </div><div className="strategy-pulse"><small>MARKET PRESSURE</small><b className={`pressure-${pressure > .66 ? "high" : pressure > .4 ? "medium" : "low"}`}>{pressureLabel(pressure)}</b><div className="strategy-pulse-track"><i style={{ width: `${Math.round(pressure * 100)}%` }} /></div><em>{opportunityCount} opportunity{opportunityCount === 1 ? "" : "ies"} detected</em></div></section>
+    <nav className="strategy-tabs" aria-label="Strategy reports">{tabs.map((item) => <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)} aria-pressed={tab === item.id}><i>{item.icon}</i><span><b>{item.label}</b><small>{item.detail}</small></span></button>)}</nav>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <Panel title="SWOT" style={{ flex: "1 1 360px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <SwotBox title="Strengths" color={C.green} items={swot.strengths} />
-            <SwotBox title="Weaknesses" color={C.red} items={swot.weaknesses} />
-            <SwotBox title="Opportunities" color={C.cyan} items={swot.opportunities} />
-            <SwotBox title="Threats" color={C.amber} items={swot.threats} />
-          </div>
-        </Panel>
+    {tab === "brief" && <div className="strategy-view strategy-brief-view"><section className="strategy-card board-memo-card">
+      <header><div><span>THIS QUARTER</span><h3>Board memo</h3></div><div className="strategy-card-badge">{world.events.length} signals tracked</div></header>
+      <div className="memo-layout"><div className="memo-column"><h4><i className="memo-dot happened" />What changed</h4>
+        {memo.whatHappened.length ? memo.whatHappened.map((item, index) => <article className="memo-signal" key={index}><b>{index + 1}</b><p>{item}</p></article>) : <EmptyInsight icon="◷" title="No major change yet" detail="Advance time and this brief will track the decisions shaping your quarter." />}
+      </div><div className="memo-column memo-decisions"><h4><i className="memo-dot decision" />Decisions for the board</h4>{memo.issues.map((item, index) => <article className="memo-question" key={index}><span>?</span><p>{item}</p></article>)}</div></div>
+      <footer>There is no automatic “correct” answer. Your next move should reflect your cash, appetite for risk, and company ambition.</footer>
+    </section><aside className="strategy-side-stack">
+      <StrategyMetric icon="✦" label="Active products" value={String(activeProducts)} detail={`${world.player.skus.length - activeProducts} archived`} tone="blue" />
+      <StrategyMetric icon="⌁" label="Strategic openings" value={String(opportunityCount)} detail="Underserved market spaces" tone="green" />
+      <StrategyMetric icon="⚔" label="Competitive pressure" value={fmtPct(pressure)} detail={`${forces.filter((force) => force.pressure > .66).length} high-pressure forces`} tone={pressure > .66 ? "red" : "amber"} />
+    </aside></div>}
 
-        <Panel title="Porter's Five Forces — pressure on you" style={{ flex: "1 1 320px" }}>
-          {forces.map((f, i) => (
-            <div key={i} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 }}>
-                <span style={{ color: C.ink }}>{f.name}</span>
-                <span style={{ color: pressureColor(f.pressure), fontFamily: "ui-monospace" }}>{pressureLabel(f.pressure)}</span>
-              </div>
-              <div style={{ height: 6, background: C.grid, borderRadius: 3, overflow: "hidden" }}>
-                <div style={{ width: `${f.pressure * 100}%`, height: "100%", background: pressureColor(f.pressure) }} />
-              </div>
-              <div style={{ color: C.dim, fontSize: 11, marginTop: 3 }}>{f.note}</div>
-            </div>
-          ))}
-        </Panel>
-      </div>
+    {tab === "landscape" && <div className="strategy-view landscape-grid"><section className="strategy-card swot-card">
+      <header><div><span>INTERNAL + EXTERNAL</span><h3>SWOT command board</h3></div><div className="strategy-card-badge">Live evidence</div></header>
+      <div className="swot-grid"><SwotBox title="Strengths" icon="↑" color="#18a873" items={swot.strengths} /><SwotBox title="Weaknesses" icon="!" color="#df5160" items={swot.weaknesses} /><SwotBox title="Opportunities" icon="✦" color="#168de2" items={swot.opportunities} /><SwotBox title="Threats" icon="⚡" color="#e49a16" items={swot.threats} /></div>
+    </section><section className="strategy-card forces-card">
+      <header><div><span>INDUSTRY STRUCTURE</span><h3>Five forces</h3></div><div className={`strategy-card-badge force-${pressure > .66 ? "high" : pressure > .4 ? "medium" : "low"}`}>{pressureLabel(pressure)} pressure</div></header>
+      <div className="forces-list">{forces.map((force) => <article key={force.name}><div className="force-heading"><b>{force.name}</b><span style={{ color: pressureColor(force.pressure) }}>{pressureLabel(force.pressure)}</span></div><div className="force-track"><i style={{ width: `${force.pressure * 100}%`, background: pressureColor(force.pressure) }} /></div><p>{force.note}</p></article>)}</div>
+    </section></div>}
 
-      <Panel title="Portfolio — BCG Matrix">
-        {bcg.length === 0 ? <div style={{ color: C.faint, fontSize: 13 }}>No products yet.</div> : <BcgMatrix items={bcg} brandColor={C.violet} />}
-      </Panel>
-
-      <Panel title="Product Analysis — where each product fits">
-        {world.player.skus.length === 0 ? <div style={{ color: C.faint, fontSize: 13 }}>No products yet.</div> :
-          computeProductAnalysis(world).map((pa, i) => (
-            <div key={i} style={{ marginBottom: 16, paddingBottom: 14, borderBottom: `1px solid ${C.grid}` }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-                <span style={{ color: C.violet, fontWeight: 600 }}>{pa.sku}</span>
-                <span style={{ color: C.dim, fontSize: 11 }}>serves: {pa.topNeeds.map((n) => `${n.label} ${(n.value * 100).toFixed(0)}`).join(" · ")}</span>
-              </div>
-              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-                <FitList title="Best-fit segments" color={C.green} rows={pa.best} />
-                <FitList title="Worst-fit segments" color={C.red} rows={pa.worst} />
-              </div>
-            </div>
-          ))}
-      </Panel>
-    </div>
-  );
+    {tab === "portfolio" && <section className="strategy-card portfolio-card"><header><div><span>RESOURCE ALLOCATION</span><h3>Product portfolio matrix</h3></div><div className="strategy-card-badge">{bcg.length} products mapped</div></header>{bcg.length ? <BcgMatrix items={bcg} brandColor={C.violet} /> : <EmptyInsight icon="◇" title="No products to map" detail="Create and launch a product to compare market growth, relative share, and revenue contribution." />}</section>}
+    {tab === "products" && <section className="strategy-card product-fit-card"><header><div><span>CUSTOMER–PRODUCT FIT</span><h3>Where each product can win</h3></div><div className="strategy-card-badge">Top and weak segments</div></header>{productAnalysis.length ? <div className="product-fit-list">{productAnalysis.map((product) => <ProductFit key={product.sku} product={product} />)}</div> : <EmptyInsight icon="◎" title="No product analysis yet" detail="Create a product and the Strategy team will identify its strongest and weakest customer fits." />}</section>}
+    <StrategyStyles />
+  </div>;
 }
 
-function SwotBox({ title, color, items }: { title: string; color: string; items: { text: string; weight: number }[] }) {
-  return (
-    <div style={{ background: C.panel2, border: `1px solid ${C.line}`, borderTop: `2px solid ${color}`, borderRadius: 8, padding: 12 }}>
-      <div style={{ color, fontSize: 11, textTransform: "uppercase", letterSpacing: .6, marginBottom: 8, fontWeight: 700 }}>{title}</div>
-      {items.length === 0 ? <div style={{ color: C.faint, fontSize: 12 }}>—</div> :
-        items.map((it, i) => <div key={i} style={{ color: C.ink, fontSize: 12, lineHeight: 1.45, marginBottom: 6 }}>• {it.text}</div>)}
-    </div>
-  );
+function StrategyMetric({ icon, label, value, detail, tone }: { icon: string; label: string; value: string; detail: string; tone: "blue" | "green" | "amber" | "red" }) {
+  return <article className={`strategy-metric metric-${tone}`}><i>{icon}</i><div><small>{label}</small><b>{value}</b><span>{detail}</span></div></article>;
 }
-
-const pressureColor = (p: number) => p > 0.66 ? C.red : p > 0.4 ? C.amber : C.green;
-const pressureLabel = (p: number) => p > 0.66 ? "High" : p > 0.4 ? "Moderate" : "Low";
+function EmptyInsight({ icon, title, detail }: { icon: string; title: string; detail: string }) {
+  return <div className="strategy-empty"><i>{icon}</i><div><b>{title}</b><span>{detail}</span></div></div>;
+}
+function SwotBox({ title, icon, color, items }: { title: string; icon: string; color: string; items: { text: string; weight: number }[] }) {
+  return <article className="swot-box" style={{ "--swot-color": color } as React.CSSProperties}><h4><i>{icon}</i>{title}<small>{items.length}</small></h4><div>{items.length ? items.map((item, index) => <p key={index}>{item.text}</p>) : <p className="swot-empty">No material signal yet.</p>}</div></article>;
+}
+const pressureColor = (pressure: number) => pressure > .66 ? C.red : pressure > .4 ? C.amber : C.green;
+const pressureLabel = (pressure: number) => pressure > .66 ? "High" : pressure > .4 ? "Moderate" : "Low";
 
 function BcgMatrix({ items, brandColor }: { items: ReturnType<typeof computeBcg>; brandColor: string }) {
-  const W = 420, H = 320, pad = 50;
-  // x = relative share (log-ish, 0..2+ mapped), high share on LEFT per BCG convention
-  const xOf = (rel: number) => pad + (1 - Math.min(1, rel / 3)) * (W - 2 * pad);
-  const yOf = (growth: number) => {
-    const g = Math.max(-0.02, Math.min(0.02, growth));
-    return pad + (1 - (g + 0.02) / 0.04) * (H - 2 * pad);
-  };
-  const quadrantLabels: { x: number; y: number; label: BcgClass; color: string }[] = [
-    { x: pad + 40, y: pad + 16, label: "Star", color: C.green },
-    { x: W - pad - 50, y: pad + 16, label: "Question Mark", color: C.amber },
-    { x: pad + 40, y: H - pad - 8, label: "Cash Cow", color: C.cyan },
-    { x: W - pad - 50, y: H - pad - 8, label: "Dog", color: C.faint },
+  const width = 560, height = 360, pad = 58;
+  const xOf = (relativeShare: number) => pad + (1 - Math.min(1, relativeShare / 3)) * (width - 2 * pad);
+  const yOf = (growth: number) => { const value = Math.max(-.02, Math.min(.02, growth)); return pad + (1 - (value + .02) / .04) * (height - 2 * pad); };
+  const quadrants: { x: number; y: number; label: BcgClass; icon: string; color: string }[] = [
+    { x: 145, y: 85, label: "Star", icon: "★", color: C.green }, { x: 425, y: 85, label: "Question Mark", icon: "?", color: C.amber },
+    { x: 145, y: 285, label: "Cash Cow", icon: "$", color: C.cyan }, { x: 425, y: 285, label: "Dog", icon: "↓", color: C.faint },
   ];
-  return (
-    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: 460 }}>
-        <rect width={W} height={H} fill={C.panel2} rx="8" />
-        <line x1={W / 2} y1={pad} x2={W / 2} y2={H - pad} stroke={C.line} />
-        <line x1={pad} y1={H / 2} x2={W - pad} y2={H / 2} stroke={C.line} />
-        {quadrantLabels.map((q, i) => <text key={i} x={q.x} y={q.y} fill={q.color} fontSize="11" fontWeight="700" textAnchor="middle">{q.label}</text>)}
-        <text x={W / 2} y={H - 14} fill={C.dim} fontSize="10" textAnchor="middle">← higher relative share          lower share →</text>
-        <text x={16} y={H / 2} fill={C.dim} fontSize="10" textAnchor="middle" transform={`rotate(-90 16 ${H / 2})`}>← shrinking   market growth   growing →</text>
-        {items.map((it, i) => (
-          <g key={i}>
-            <circle cx={xOf(it.relShare)} cy={yOf(it.growth)} r={Math.max(6, Math.min(22, Math.sqrt(it.revenue) / 12))} fill={brandColor} opacity="0.5" stroke={brandColor} />
-            <text x={xOf(it.relShare)} y={yOf(it.growth) - 14} fill={C.ink} fontSize="10" textAnchor="middle">{it.sku}</text>
-          </g>
-        ))}
-      </svg>
-      <div style={{ flex: "1 1 220px" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead><tr style={{ color: C.dim, textAlign: "right" }}><th style={{ textAlign: "left", padding: "4px" }}>Product</th><th>Class</th><th>Rev/Q</th></tr></thead>
-          <tbody style={{ fontFamily: "ui-monospace" }}>
-            {items.map((it, i) => (
-              <tr key={i} style={{ borderTop: `1px solid ${C.grid}`, textAlign: "right" }}>
-                <td style={{ textAlign: "left", color: C.ink, padding: "6px 4px" }}>{it.sku}</td>
-                <td style={{ color: classColor(it.klass) }}>{it.klass}</td>
-                <td style={{ color: C.dim }}>{fmtMoney(it.revenue)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div style={{ marginTop: 10, color: C.faint, fontSize: 11, lineHeight: 1.5 }}>
-          Bubble size ≈ revenue. Stars need investment, Cash Cows fund the rest, Question Marks are bets, Dogs are decisions.
-        </div>
-      </div>
-    </div>
-  );
+  return <div className="bcg-layout"><div className="bcg-plot"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="BCG product portfolio matrix">
+    <defs><linearGradient id="bcgBackground" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#f5fbff" /><stop offset="1" stopColor="#faf7ff" /></linearGradient><filter id="bubbleShadow"><feDropShadow dx="0" dy="3" stdDeviation="3" floodOpacity=".2" /></filter></defs>
+    <rect width={width} height={height} fill="url(#bcgBackground)" rx="18" /><rect x={pad} y={pad} width={(width - 2 * pad) / 2} height={(height - 2 * pad) / 2} fill="#e9f9f1" opacity=".72" /><rect x={width / 2} y={pad} width={(width - 2 * pad) / 2} height={(height - 2 * pad) / 2} fill="#fff7e3" opacity=".72" /><rect x={pad} y={height / 2} width={(width - 2 * pad) / 2} height={(height - 2 * pad) / 2} fill="#e8f6fd" opacity=".72" /><rect x={width / 2} y={height / 2} width={(width - 2 * pad) / 2} height={(height - 2 * pad) / 2} fill="#f1f3f5" opacity=".72" />
+    <line x1={width / 2} y1={pad} x2={width / 2} y2={height - pad} stroke="#bfd0db" strokeWidth="2" /><line x1={pad} y1={height / 2} x2={width - pad} y2={height / 2} stroke="#bfd0db" strokeWidth="2" />
+    {quadrants.map((quadrant) => <g key={quadrant.label}><circle cx={quadrant.x - 47} cy={quadrant.y - 4} r="13" fill={quadrant.color} opacity=".14" /><text x={quadrant.x - 47} y={quadrant.y} fill={quadrant.color} fontSize="13" fontWeight="900" textAnchor="middle">{quadrant.icon}</text><text x={quadrant.x - 27} y={quadrant.y} fill={quadrant.color} fontSize="13" fontWeight="850">{quadrant.label}</text></g>)}
+    <text x={width / 2} y={height - 18} fill={C.dim} fontSize="12" fontWeight="700" textAnchor="middle">HIGHER RELATIVE SHARE  ←————————→  LOWER SHARE</text><text x="19" y={height / 2} fill={C.dim} fontSize="12" fontWeight="700" textAnchor="middle" transform={`rotate(-90 19 ${height / 2})`}>SHRINKING  ←—— MARKET GROWTH ——→  GROWING</text>
+    {items.map((item, index) => { const radius = Math.max(11, Math.min(27, Math.sqrt(item.revenue) / 10)); return <g key={`${item.sku}-${index}`} filter="url(#bubbleShadow)"><circle cx={xOf(item.relShare)} cy={yOf(item.growth)} r={radius} fill={brandColor} opacity=".75" stroke="#fff" strokeWidth="3" /><text x={xOf(item.relShare)} y={yOf(item.growth) - radius - 7} fill={C.ink} fontSize="12" fontWeight="800" textAnchor="middle">{item.sku}</text></g>; })}
+  </svg></div><div className="bcg-list">{items.map((item) => <article key={item.sku}><i style={{ background: classColor(item.klass) }}>{classIcon(item.klass)}</i><div><b>{item.sku}</b><span>{item.klass}</span></div><strong>{fmtMoney(item.revenue)}<small> / quarter</small></strong></article>)}<p>Bubble size shows revenue. Stars need investment; Cash Cows can fund the next bet; Question Marks need evidence; Dogs require a deliberate keep, fix, or archive decision.</p></div></div>;
 }
-const classColor = (k: BcgClass) => k === "Star" ? C.green : k === "Cash Cow" ? C.cyan : k === "Question Mark" ? C.amber : C.faint;
+const classColor = (type: BcgClass) => type === "Star" ? C.green : type === "Cash Cow" ? C.cyan : type === "Question Mark" ? C.amber : C.faint;
+const classIcon = (type: BcgClass) => type === "Star" ? "★" : type === "Cash Cow" ? "$" : type === "Question Mark" ? "?" : "↓";
 
-function FitList({ title, color, rows }: { title: string; color: string; rows: { coord: any; market: number; demoFit: number; needFit: number; combined: number }[] }) {
-  return (
-    <div style={{ flex: "1 1 240px" }}>
-      <div style={{ color, fontSize: 11, textTransform: "uppercase", letterSpacing: .6, marginBottom: 6 }}>{title}</div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-        <thead><tr style={{ color: C.faint, textAlign: "right" }}><th style={{ textAlign: "left" }}>Segment</th><th>Demo</th><th>Need</th><th>Fit</th></tr></thead>
-        <tbody style={{ fontFamily: "ui-monospace" }}>
-          {rows.map((r, i) => (
-            <tr key={i} style={{ textAlign: "right" }}>
-              <td style={{ textAlign: "left", color: C.ink, padding: "2px 0" }}>{r.coord.age} {r.coord.class.slice(0, 3)} {r.coord.gender.slice(0, 1)}</td>
-              <td style={{ color: C.dim }}>{(r.demoFit * 100).toFixed(0)}</td>
-              <td style={{ color: C.dim }}>{(r.needFit * 100).toFixed(0)}</td>
-              <td style={{ color }}>{(r.combined * 100).toFixed(0)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+function ProductFit({ product }: { product: ReturnType<typeof computeProductAnalysis>[number] }) {
+  const [open, setOpen] = React.useState(false); const strongest = product.best[0];
+  return <article className={`product-fit-item ${open ? "open" : ""}`}><button className="product-fit-summary" onClick={() => setOpen((value) => !value)} aria-expanded={open}><span className="product-fit-icon">◈</span><span className="product-fit-name"><b>{product.sku}</b><small>Built around {product.topNeeds.map((need) => need.label).join(" · ")}</small></span><span className="product-fit-score"><small>Best fit</small><b>{strongest ? fmtPct(strongest.combined) : "—"}</b></span><span className="product-fit-chevron">⌄</span></button>{open && <div className="product-fit-detail"><FitList title="Best-fit segments" color={C.green} rows={product.best} /><FitList title="Weakest-fit segments" color={C.red} rows={product.worst} /></div>}</article>;
 }
+function FitList({ title, color, rows }: { title: string; color: string; rows: { coord: any; market: number; demoFit: number; needFit: number; combined: number }[] }) {
+  return <div className="fit-list"><h4 style={{ color }}>{title}</h4>{rows.map((row, index) => <article key={index}><div><b>{row.coord.age} · {row.coord.class}</b><span>{row.coord.gender} · {row.coord.leaning}</span></div><div className="fit-bars"><span><i style={{ width: `${row.demoFit * 100}%`, background: color }} /></span><small>Audience {fmtPct(row.demoFit)} · Needs {fmtPct(row.needFit)}</small></div><strong style={{ color }}>{fmtPct(row.combined)}</strong></article>)}</div>;
+}
+
+function StrategyStyles() { return <style>{`
+  .strategy-room{display:grid;gap:14px;color:${C.ink}}.strategy-hero,.strategy-lock-hero{position:relative;isolation:isolate;min-height:210px;display:grid;grid-template-columns:minmax(0,1fr) 235px;gap:22px;align-items:center;padding:24px 26px;border-radius:19px;overflow:hidden;color:#fff;background:linear-gradient(125deg,#071f3c,#0b4774 56%,#16496f);box-shadow:0 16px 38px rgba(5,31,59,.22)}.strategy-hero>img,.strategy-lock-hero>img{position:absolute;inset:0;z-index:-2;width:100%;height:100%;object-fit:cover;opacity:.32}.strategy-hero:after,.strategy-lock-hero:after{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(5,26,53,.97) 0%,rgba(8,47,81,.9) 52%,rgba(9,46,75,.62) 100%)}.strategy-hero-copy>span,.strategy-lock-copy>span{font-size:12px;font-weight:950;letter-spacing:1.35px;color:#7dd8ff}.strategy-hero h2,.strategy-lock-hero h2{max-width:760px;margin:6px 0 8px;font-size:27px;line-height:1.12;letter-spacing:-.35px}.strategy-hero p,.strategy-lock-hero p{max-width:720px;margin:0;color:#d4e9f5;font-size:14px;line-height:1.55}.strategy-pulse{padding:17px;border:1px solid rgba(255,255,255,.2);border-radius:15px;background:rgba(255,255,255,.1);backdrop-filter:blur(7px)}.strategy-pulse small,.strategy-pulse b,.strategy-pulse em{display:block}.strategy-pulse small{font-size:11px;font-weight:850;letter-spacing:.7px;color:#c2dfec}.strategy-pulse b{font-size:25px;line-height:1;margin:7px 0 10px}.strategy-pulse b.pressure-low{color:#78f0bd}.strategy-pulse b.pressure-medium{color:#ffd179}.strategy-pulse b.pressure-high{color:#ff9ba5}.strategy-pulse-track{height:8px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.15)}.strategy-pulse-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#35d19a,#f5bf49,#ee6070)}.strategy-pulse em{margin-top:9px;color:#d7e7ef;font-size:12px;font-style:normal}
+  .strategy-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:6px;border:1px solid #ccdce6;border-radius:15px;background:#dfeaf1}.strategy-tabs button{display:flex;align-items:center;gap:10px;min-width:0;min-height:56px;padding:9px 12px;text-align:left;border:0;border-radius:10px;background:transparent;color:${C.dim};cursor:pointer;transition:transform .15s,background .15s,box-shadow .15s}.strategy-tabs button:hover{background:rgba(255,255,255,.68)}.strategy-tabs button:active{transform:scale(.98)}.strategy-tabs button:focus-visible,.product-fit-summary:focus-visible{outline:3px solid #70c9fa;outline-offset:2px}.strategy-tabs button.active{background:#fff;color:#176fb2;box-shadow:0 5px 14px rgba(14,54,83,.11)}.strategy-tabs button>i{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:10px;background:rgba(83,103,201,.1);color:${C.violet};font-size:17px;font-style:normal}.strategy-tabs button.active>i{color:#fff;background:linear-gradient(145deg,#229be6,#5367c9);box-shadow:0 5px 12px rgba(53,112,193,.25)}.strategy-tabs span{min-width:0}.strategy-tabs b,.strategy-tabs small{display:block}.strategy-tabs b{font-size:13px}.strategy-tabs small{margin-top:2px;font-size:11px;color:${C.dim};white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.strategy-view{display:grid;gap:14px}.strategy-brief-view{grid-template-columns:minmax(0,1fr) 260px}.strategy-card{overflow:hidden;border:1px solid ${C.line};border-radius:16px;background:#fff;box-shadow:0 7px 22px rgba(15,53,79,.065)}.strategy-card>header{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:17px 18px;border-bottom:1px solid ${C.grid};background:linear-gradient(180deg,#fff,#f8fbfd)}.strategy-card>header span{display:block;color:#57768a;font-size:11px;font-weight:950;letter-spacing:.9px}.strategy-card>header h3{margin:3px 0 0;font-size:19px;line-height:1.1}.strategy-card-badge{padding:7px 10px;border:1px solid #d6e4ed;border-radius:99px;background:#eef6fb;color:#3d6c88;font-size:11px;font-weight:850;white-space:nowrap}.memo-layout{display:grid;grid-template-columns:1fr 1fr}.memo-column{padding:18px}.memo-column+.memo-column{border-left:1px solid ${C.grid}}.memo-column h4{display:flex;align-items:center;gap:7px;margin:0 0 11px;font-size:13px}.memo-dot{width:9px;height:9px;border-radius:99px;background:${C.cyan};box-shadow:0 0 0 4px #e3f3fa}.memo-dot.decision{background:${C.amber};box-shadow:0 0 0 4px #fff2d6}.memo-signal,.memo-question{display:flex;gap:10px;align-items:flex-start;margin-top:8px;padding:11px;border:1px solid #dde7ed;border-radius:11px;background:#f8fbfd}.memo-signal>b,.memo-question>span{display:grid;place-items:center;width:24px;height:24px;flex:0 0 24px;border-radius:8px;background:#e5f4fc;color:${C.cyan};font-size:11px}.memo-question{border-color:#f0d99c;background:#fffbef}.memo-question>span{background:#ffebbc;color:#9a6500;font-weight:950}.memo-signal p,.memo-question p{margin:0;color:#405565;font-size:12.5px;line-height:1.45}.board-memo-card>footer{padding:12px 18px;border-top:1px solid ${C.grid};background:#f7fafc;color:${C.dim};font-size:12px;line-height:1.45}
+  .strategy-side-stack{display:grid;gap:10px}.strategy-metric{display:flex;align-items:center;gap:12px;min-height:92px;padding:14px;border:1px solid ${C.line};border-radius:14px;background:#fff;box-shadow:0 6px 17px rgba(15,53,79,.055)}.strategy-metric>i{display:grid;place-items:center;width:44px;height:44px;flex:0 0 44px;border-radius:13px;font-size:20px;font-style:normal}.strategy-metric small,.strategy-metric b,.strategy-metric span{display:block}.strategy-metric small{color:${C.dim};font-size:11px;font-weight:850;text-transform:uppercase}.strategy-metric b{font-size:21px;line-height:1.1;margin:2px 0}.strategy-metric span{color:${C.dim};font-size:11px}.metric-blue>i{color:#167dcc;background:#e5f3ff}.metric-green>i{color:#0f9063;background:#e3f8ef}.metric-amber>i{color:#b97809;background:#fff3d4}.metric-red>i{color:#c84050;background:#ffe8eb}.strategy-empty{display:flex;align-items:center;gap:12px;margin:16px;padding:19px;border:1px dashed #c7d6df;border-radius:13px;background:#f7fafc}.strategy-empty>i{display:grid;place-items:center;width:42px;height:42px;flex:0 0 42px;border-radius:12px;background:#e6eef4;color:${C.violet};font-style:normal;font-size:20px}.strategy-empty b,.strategy-empty span{display:block}.strategy-empty b{font-size:14px}.strategy-empty span{margin-top:3px;color:${C.dim};font-size:12px;line-height:1.45}
+  .landscape-grid{grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr)}.swot-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px}.swot-box{overflow:hidden;border:1px solid #dce6eb;border-top:4px solid var(--swot-color);border-radius:13px;background:#fbfdfe}.swot-box h4{display:flex;align-items:center;gap:8px;margin:0;padding:11px 12px;border-bottom:1px solid ${C.grid};font-size:13px}.swot-box h4>i{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;color:#fff;background:var(--swot-color);font-style:normal}.swot-box h4>small{margin-left:auto;display:grid;place-items:center;width:23px;height:23px;border-radius:99px;color:var(--swot-color);background:#f0f4f7;font-size:11px}.swot-box>div{padding:3px 12px 10px}.swot-box p{position:relative;margin:0;padding:8px 0 8px 13px;border-bottom:1px solid ${C.grid};color:#405565;font-size:12px;line-height:1.42}.swot-box p:last-child{border:0}.swot-box p:before{content:'';position:absolute;left:0;top:14px;width:5px;height:5px;border-radius:99px;background:var(--swot-color)}.swot-box p.swot-empty{color:${C.faint};font-style:italic}.forces-list{padding:4px 17px 11px}.forces-list article{padding:12px 0;border-bottom:1px solid ${C.grid}}.forces-list article:last-child{border:0}.force-heading{display:flex;justify-content:space-between;gap:12px;align-items:center}.force-heading b{font-size:13px}.force-heading span{font-size:12px;font-weight:900}.force-track{height:8px;margin:7px 0;border-radius:99px;background:#e8eef2;overflow:hidden}.force-track i{display:block;height:100%;border-radius:inherit}.forces-list p{margin:0;color:${C.dim};font-size:12px;line-height:1.4}.force-low{color:${C.green};background:#e5f8f0;border-color:#bde9d7}.force-medium{color:#a66a00;background:#fff6dc;border-color:#efdca1}.force-high{color:${C.red};background:#ffebed;border-color:#efc3c8}
+  .bcg-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.8fr);gap:16px;padding:16px}.bcg-plot{min-width:0}.bcg-plot svg{display:block;width:100%;max-height:480px}.bcg-list{display:grid;align-content:start;gap:8px}.bcg-list article{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:9px;align-items:center;padding:10px;border:1px solid ${C.grid};border-radius:11px;background:#f8fbfd}.bcg-list article>i{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;color:#fff;font-weight:900;font-style:normal}.bcg-list article b,.bcg-list article span,.bcg-list article small{display:block}.bcg-list article b{font-size:12.5px}.bcg-list article span{color:${C.dim};font-size:11px}.bcg-list article strong{text-align:right;font-size:13px}.bcg-list article small{color:${C.dim};font-size:10px;font-weight:500}.bcg-list>p{margin:4px 1px 0;color:${C.dim};font-size:11.5px;line-height:1.45}.product-fit-list{display:grid;gap:9px;padding:14px}.product-fit-item{overflow:hidden;border:1px solid ${C.line};border-radius:13px;background:#fbfdfe}.product-fit-item.open{border-color:#b9c9ed;box-shadow:0 6px 17px rgba(63,83,166,.08)}.product-fit-summary{display:grid;grid-template-columns:42px minmax(0,1fr) auto 24px;gap:10px;align-items:center;width:100%;min-height:66px;padding:10px 13px;border:0;background:#fff;color:${C.ink};text-align:left;cursor:pointer}.product-fit-summary:hover{background:#f8fbfe}.product-fit-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;color:#fff;background:linear-gradient(145deg,#168de2,#735fdd);font-size:19px}.product-fit-name b,.product-fit-name small,.product-fit-score small,.product-fit-score b{display:block}.product-fit-name b{font-size:14px}.product-fit-name small{margin-top:3px;color:${C.dim};font-size:11.5px}.product-fit-score{text-align:right}.product-fit-score small{color:${C.dim};font-size:10px;text-transform:uppercase}.product-fit-score b{color:${C.green};font-size:17px}.product-fit-chevron{color:${C.violet};font-size:18px;transition:transform .16s}.product-fit-item.open .product-fit-chevron{transform:rotate(180deg)}.product-fit-detail{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;border-top:1px solid ${C.grid};background:#f6f9fb}.fit-list{padding:11px;border:1px solid ${C.line};border-radius:11px;background:#fff}.fit-list h4{margin:0 0 7px;font-size:12px;text-transform:uppercase}.fit-list article{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(150px,1.25fr) 48px;gap:10px;align-items:center;padding:8px 0;border-top:1px solid ${C.grid}}.fit-list article>div:first-child b,.fit-list article>div:first-child span{display:block}.fit-list article>div:first-child b{font-size:12px}.fit-list article>div:first-child span{color:${C.dim};font-size:10.5px;margin-top:2px}.fit-bars>span{display:block;height:7px;border-radius:99px;background:#e7edf1;overflow:hidden}.fit-bars>span i{display:block;height:100%;border-radius:inherit}.fit-bars small{display:block;margin-top:3px;color:${C.dim};font-size:10px}.fit-list article>strong{text-align:right;font-size:13px}
+  .strategy-lock-hero{grid-template-columns:minmax(0,700px);min-height:330px}.strategy-lock-copy{position:relative;z-index:1}.strategy-lock-requirement{display:flex;align-items:center;gap:11px;width:fit-content;margin-top:18px;padding:12px 15px;border:1px solid rgba(255,255,255,.2);border-radius:13px;background:rgba(255,255,255,.11);backdrop-filter:blur(6px)}.strategy-lock-requirement>i{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.13);font-style:normal}.strategy-lock-requirement b,.strategy-lock-requirement small{display:block}.strategy-lock-requirement b{font-size:13px}.strategy-lock-requirement small{margin-top:2px;color:#cde1ed;font-size:11px}
+  @media(max-width:980px){.strategy-brief-view,.landscape-grid,.bcg-layout{grid-template-columns:1fr}.strategy-side-stack{grid-template-columns:repeat(3,1fr)}.strategy-metric{min-height:84px}.strategy-tabs button{justify-content:center}.strategy-tabs button>span small{display:none}}
+  @media(max-width:700px){.strategy-room{gap:10px}.strategy-hero,.strategy-lock-hero{grid-template-columns:1fr;min-height:0;padding:18px 16px;gap:13px}.strategy-hero h2,.strategy-lock-hero h2{font-size:22px}.strategy-hero p,.strategy-lock-hero p{font-size:13px}.strategy-pulse{display:grid;grid-template-columns:1fr auto;align-items:center;padding:12px}.strategy-pulse b{grid-column:2;grid-row:1;margin:0;font-size:19px}.strategy-pulse-track{grid-column:1/-1}.strategy-pulse em{grid-column:1/-1}.strategy-tabs{display:flex;overflow-x:auto;scrollbar-width:none}.strategy-tabs::-webkit-scrollbar{display:none}.strategy-tabs button{flex:0 0 142px;min-height:52px;justify-content:flex-start}.strategy-tabs button>i{width:31px;height:31px;flex-basis:31px}.strategy-card>header{padding:14px}.strategy-card>header h3{font-size:17px}.strategy-card-badge{display:none}.memo-layout,.product-fit-detail{grid-template-columns:1fr}.memo-column{padding:14px}.memo-column+.memo-column{border-left:0;border-top:1px solid ${C.grid}}.strategy-side-stack{grid-template-columns:1fr}.strategy-metric{min-height:74px}.swot-grid{grid-template-columns:1fr;padding:10px}.bcg-layout{padding:10px}.bcg-plot{overflow-x:auto}.bcg-plot svg{min-width:500px}.product-fit-list{padding:10px}.product-fit-summary{grid-template-columns:38px minmax(0,1fr) auto 20px}.product-fit-icon{width:38px;height:38px}.product-fit-score small{display:none}.fit-list article{grid-template-columns:minmax(105px,.8fr) minmax(120px,1.25fr) 45px}.strategy-lock-requirement{width:auto}.strategy-lock-hero{min-height:280px}}
+  @media(max-width:420px){.strategy-tabs button{flex-basis:128px;padding:8px}.strategy-tabs button>i{display:none}.strategy-hero h2,.strategy-lock-hero h2{font-size:20px}.strategy-pulse{display:none}.product-fit-score{display:none}.product-fit-summary{grid-template-columns:38px minmax(0,1fr) 20px}.fit-list article{grid-template-columns:1fr auto}.fit-bars{grid-column:1/-1;grid-row:2}.fit-list article>strong{grid-column:2;grid-row:1}.bcg-list article{grid-template-columns:31px minmax(0,1fr) auto}.bcg-list article>i{width:31px;height:31px}}
+  @media(prefers-reduced-motion:reduce){.strategy-tabs button,.product-fit-chevron{transition:none}}
+`}</style>; }

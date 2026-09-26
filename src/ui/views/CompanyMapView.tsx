@@ -150,14 +150,18 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   const [confirmDemolishId, setConfirmDemolishId] = useState<string | null>(null);
   const [tool, setTool] = useState<BuildTool | "select" | "navigate">("select");
   const [hover, setHover] = useState({ x: 0, y: 0 });
+  const [hoveredRoomId, setHoveredRoomId] = useState<string | null>(null);
+  const [hoverPoint, setHoverPoint] = useState({ x: 0, y: 0 });
+  const [pressedRoomId, setPressedRoomId] = useState<string | null>(null);
   const [camera, setCamera] = useState({ x: 480, y: 28, zoom: 0.72 });
   const [message, setMessage] = useState("Start from the entrance: build a path, then place your first office beside it.");
   const [visualClock, setVisualClock] = useState(Date.now());
   const [buildFx, setBuildFx] = useState<{ id: string; until: number } | null>(null);
   const [pulseOpen, setPulseOpen] = useState(false);
+  const [buildMenuOpen, setBuildMenuOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null);
   const [compact, setCompact] = useState(false);
-  const drag = useRef<{ active: boolean; moved: boolean; x: number; y: number }>({ active: false, moved: false, x: 0, y: 0 });
+  const drag = useRef<{ active: boolean; moved: boolean; x: number; y: number; originX: number; originY: number; threshold: number }>({ active: false, moved: false, x: 0, y: 0, originX: 0, originY: 0, threshold: 7 });
   const pathStart = useRef<{ x: number; y: number } | null>(null);
   const roomsCountRef = useRef(rooms.length);
   const roomsRef = useRef(rooms);
@@ -185,6 +189,18 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   const expansionQuote = expansionRoom ? facilityUpgradeQuote(expansionRoom) : null;
   const expansionSize = expansionRoom && expansionQuote ? facilityFootprintForLevel(roomFacilityType(expansionRoom), expansionQuote.nextLevel, expansionRoom) : null;
   const movingRoom = moveTargetId ? rooms.find((r) => r.id === moveTargetId) ?? null : null;
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (buildMenuOpen) { setBuildMenuOpen(false); return; }
+      if (pulseOpen) { setPulseOpen(false); return; }
+      if (expansionTargetId) { setSelectedId(expansionTargetId); setExpansionTargetId(null); setMessage("Expansion cancelled."); return; }
+      if (moveTargetId) { setSelectedId(moveTargetId); setMoveTargetId(null); setMessage("Move cancelled."); return; }
+      if (selectedId) setSelectedId(null);
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [buildMenuOpen, pulseOpen, expansionTargetId, moveTargetId, selectedId]);
   const productRooms = rooms.filter((r) => r.kind === "office" && (r.team === "product" || r.id === "founder-office") && r.productKey);
   const hasFactory = rooms.some((r) => r.kind === "factory");
   const hasWarehouse = rooms.some((r) => r.kind === "warehouse");
@@ -428,6 +444,8 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
 
     const drawBuilding = (room: Room) => {
       const selectedNow = room.id === selectedId;
+      const hoveredNow = room.id === hoveredRoomId && (tool === "select" || tool === "navigate") && !drag.current.moved;
+      const pressedNow = room.id === pressedRoomId;
       const status = roomStatus(room);
       const rawH = roomHeight(room) * camera.zoom;
       const p0 = iso(room.x, room.y, camera.x, camera.y, camera.zoom);
@@ -443,7 +461,14 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
 
       ctx.save();
       const foundation = iso(room.x + room.w / 2, room.y + room.h, camera.x, camera.y, camera.zoom);
-      ctx.fillStyle = selectedNow ? "rgba(83,103,201,.16)" : "rgba(47,63,71,.11)";
+      if (selectedNow || hoveredNow || pressedNow) {
+        const glowColor = selectedNow ? "rgba(124,58,237,.22)" : pressedNow ? "rgba(14,165,233,.32)" : "rgba(14,165,233,.22)";
+        ctx.fillStyle = glowColor;
+        ctx.beginPath();
+        ctx.ellipse(foundation.x, foundation.y + 3 * camera.zoom, Math.max(30, (room.w + room.h) * 10.5 * camera.zoom), Math.max(10, (room.w + room.h) * 3.2 * camera.zoom), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = selectedNow ? "rgba(83,103,201,.18)" : hoveredNow ? "rgba(14,165,233,.18)" : "rgba(47,63,71,.11)";
       ctx.beginPath();
       ctx.ellipse(foundation.x, foundation.y + 4 * camera.zoom, Math.max(22, (room.w + room.h) * 8 * camera.zoom), Math.max(7, (room.w + room.h) * 2.2 * camera.zoom), 0, 0, Math.PI * 2);
       ctx.fill();
@@ -455,27 +480,28 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
         const dx = base.x - drawW * asset.anchor.x;
         const dy = base.y - drawH * asset.anchor.y;
         assetTopY = dy + drawH * .12;
-        ctx.shadowColor = selectedNow ? "rgba(124,58,237,.3)" : "rgba(30,41,59,.14)";
-        ctx.shadowBlur = selectedNow ? 15 : 6; ctx.shadowOffsetY = 5;
+        ctx.shadowColor = selectedNow ? "rgba(124,58,237,.42)" : hoveredNow || pressedNow ? "rgba(14,165,233,.48)" : "rgba(30,41,59,.14)";
+        ctx.shadowBlur = selectedNow ? 20 : hoveredNow || pressedNow ? 18 : 6; ctx.shadowOffsetY = pressedNow ? 2 : 5;
+        ctx.filter = pressedNow ? "brightness(1.14) saturate(1.18)" : hoveredNow ? "brightness(1.08) saturate(1.16)" : "none";
         const reveal = buildFx?.id === room.id && buildFx.until > visualClock ? Math.max(.08, Math.min(1, 1 - (buildFx.until - visualClock) / 4200)) : 1;
         if (reveal < 1) {
           ctx.save(); ctx.globalAlpha = .25 + reveal * .75;
           ctx.beginPath(); ctx.rect(dx - 8, dy + drawH * (1 - reveal) - 8, drawW + 16, drawH * reveal + 16); ctx.clip();
           ctx.drawImage(assetImg, dx, dy, drawW, drawH); ctx.restore();
         } else ctx.drawImage(assetImg, dx, dy, drawW, drawH);
-        ctx.shadowColor = "transparent";
-        if (selectedNow) {
-          ctx.strokeStyle = C.violet; ctx.lineWidth = 2.5;
+        ctx.shadowColor = "transparent"; ctx.filter = "none";
+        if (selectedNow || hoveredNow || pressedNow) {
+          ctx.strokeStyle = selectedNow ? C.violet : "#0ea5e9"; ctx.lineWidth = pressedNow ? 4 : selectedNow ? 3 : 2.5;
           ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.closePath(); ctx.stroke();
-          ctx.fillStyle = "rgba(83,103,201,.08)"; ctx.fill();
+          ctx.fillStyle = selectedNow ? "rgba(83,103,201,.10)" : "rgba(14,165,233,.11)"; ctx.fill();
         }
       } else {
         // Never flash a procedural block while authored art is loading. A quiet
         // footprint placeholder keeps placement legible without bringing back
         // the generic geometry that the finished campus art replaces.
-        ctx.fillStyle = selectedNow ? "rgba(83,103,201,.12)" : "rgba(148,163,184,.10)";
+        ctx.fillStyle = selectedNow ? "rgba(83,103,201,.12)" : hoveredNow ? "rgba(14,165,233,.14)" : "rgba(148,163,184,.10)";
         ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.closePath(); ctx.fill();
-        ctx.strokeStyle = selectedNow ? C.violet : "rgba(100,116,139,.28)"; ctx.lineWidth = selectedNow ? 2 : 1; ctx.stroke();
+        ctx.strokeStyle = selectedNow ? C.violet : hoveredNow ? "#0ea5e9" : "rgba(100,116,139,.28)"; ctx.lineWidth = selectedNow || hoveredNow ? 2.5 : 1; ctx.stroke();
         assetTopY = Math.min(t0.y, t1.y, t2.y, t3.y);
 
       }
@@ -496,8 +522,8 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       // Nameplate + live status, not decorative labels.
       const labelW = Math.min(194, Math.max(118, room.name.length * 6.4 + 46));
       roundedRect(ctx, center.x - labelW / 2, roofY - 54, labelW, 44, 10);
-      ctx.fillStyle = selectedNow ? "rgba(255,255,255,.98)" : "rgba(255,255,255,.91)"; ctx.fill();
-      ctx.strokeStyle = selectedNow ? C.violet : "rgba(100,116,139,.22)"; ctx.lineWidth = selectedNow ? 1.5 : 1; ctx.stroke();
+      ctx.fillStyle = selectedNow ? "rgba(255,255,255,.99)" : hoveredNow ? "rgba(240,249,255,.98)" : "rgba(255,255,255,.91)"; ctx.fill();
+      ctx.strokeStyle = selectedNow ? C.violet : hoveredNow ? "#0ea5e9" : "rgba(100,116,139,.22)"; ctx.lineWidth = selectedNow || hoveredNow ? 1.8 : 1; ctx.stroke();
       ctx.textAlign = "center"; ctx.fillStyle = "#1f2937"; ctx.font = `800 ${Math.max(9, 11.5 * camera.zoom)}px system-ui`;
       ctx.fillText(`${facilityDefForRoom(room).icon} ${room.name}`, center.x - 5, roofY - 38);
       const statusColor = status.tone === "critical" || status.tone === "blocked" ? "#dc2626" : status.tone === "warn" || status.tone === "attention" ? "#b45309" : status.tone === "active" ? "#4f46e5" : status.tone === "idle" ? "#64748b" : "#15803d";
@@ -518,6 +544,12 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       } else if (status.tone === "active") {
         const pulse = .45 + .35 * Math.sin(visualClock / 210);
         ctx.beginPath(); ctx.arc(ringX, ringY, 2.5 + pulse, 0, Math.PI * 2); ctx.fillStyle = `rgba(79,70,229,${pulse})`; ctx.fill();
+      }
+      if (selectedNow) {
+        const markerY = roofY - 66 - Math.sin(visualClock / 180) * 3;
+        ctx.fillStyle = C.violet;
+        ctx.beginPath(); ctx.arc(center.x, markerY, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "white"; ctx.font = "900 11px system-ui"; ctx.fillText("✓", center.x, markerY + 4);
       }
       ctx.restore();
 
@@ -576,7 +608,7 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       for (let yy = hover.y; yy < hover.y + h; yy++) for (let xx = hover.x; xx < hover.x + w; xx++) if (xx >= 0 && yy >= 0 && xx < MAP && yy < MAP) drawDiamond(xx, yy, valid ? "#bbf7d0" : "#fecaca", valid ? "#16a34a" : "#dc2626", 0.73);
       drawFacilityPreview(tool, hover.x, hover.y, w, h, valid);
     }
-  }, [rooms, paths, selectedId, hover, tool, camera, compact, visualClock, buildFx, pathDraft, world.tick, world.live, world.player.skus, world.player.personnel, companyBrand.color, expansionTargetId, moveTargetId]);
+  }, [rooms, paths, selectedId, hoveredRoomId, pressedRoomId, hover, tool, camera, compact, visualClock, buildFx, pathDraft, world.tick, world.live, world.player.skus, world.player.personnel, companyBrand.color, expansionTargetId, moveTargetId]);
 
   function straightTiles(start: { x: number; y: number }, end: { x: number; y: number }) {
     const horizontal = Math.abs(end.x - start.x) >= Math.abs(end.y - start.y);
@@ -600,13 +632,26 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
     return inside;
   };
 
-  // Hit testing deliberately uses only the projected foundation diamond. Tall isometric
-  // sprites can overlap visually, but they never steal clicks from the parcel below.
+  // Prefer the parcel itself, then accept the visible body of the building. This makes
+  // authored sprites feel directly clickable without letting their transparent margins
+  // steal the whole map from buildings in front of them.
   const pickRoomAtScreen = (sx: number, sy: number) => {
     const ordered = [...rooms].sort((a,b) => (b.x+b.y+b.w+b.h) - (a.x+a.y+a.w+a.h));
-    return ordered.find((r) => {
+    const foundationHit = ordered.find((r) => {
       const pts = [iso(r.x,r.y,camera.x,camera.y,camera.zoom), iso(r.x+r.w,r.y,camera.x,camera.y,camera.zoom), iso(r.x+r.w,r.y+r.h,camera.x,camera.y,camera.zoom), iso(r.x,r.y+r.h,camera.x,camera.y,camera.zoom)];
       return pointInPolygon(sx, sy, pts);
+    });
+    if (foundationHit) return foundationHit;
+    return ordered.find((room) => {
+      const asset = roomCampusAsset(world, room);
+      const image = campusAssetImage(asset);
+      const base = iso(room.x + room.w / 2, room.y + room.h, camera.x, camera.y, camera.zoom);
+      const projectedWidth = (room.w + room.h) * (TW / 2) * camera.zoom;
+      const drawW = Math.max(105, projectedWidth * asset.scale);
+      const drawH = image?.complete && image.naturalWidth ? drawW * image.naturalHeight / image.naturalWidth : Math.max(70, roomHeight(room) * camera.zoom * 2.2);
+      const left = base.x - drawW * asset.anchor.x + drawW * .12;
+      const top = base.y - drawH * asset.anchor.y + drawH * .08;
+      return sx >= left && sx <= left + drawW * .76 && sy >= top && sy <= Math.min(base.y + 4, top + drawH * .92);
     });
   };
 
@@ -710,22 +755,136 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
     ...world.activeCampaigns.map((campaign) => ({ id: `campaign_${campaign.id}`, icon: "◈", label: campaign.name, detail: `${Math.ceil(campaign.daysRemaining)}d · campaign`, progress: 1 - campaign.daysRemaining / campaign.totalDays, color: "#f43f5e", top: "mkt", sub: "campaigns" })),
   ].slice(0, 4);
 
+  const hoveredRoom = hoveredRoomId ? rooms.find((room) => room.id === hoveredRoomId) ?? null : null;
+  const hoveredStatus = hoveredRoom ? roomStatus(hoveredRoom) : null;
+  const hoveredCapacity = hoveredRoom ? (() => {
+    const facilityType = roomFacilityType(hoveredRoom);
+    if (facilityType === "training_center") return `${(world.player.trainingPrograms ?? []).filter((program) => program.facilityRoomId === hoveredRoom.id).length}/${hoveredRoom.capacity} training slots`;
+    if (hoveredRoom.kind === "office") return `${hoveredRoom.assignedPersonnelIds.length + (hoveredRoom.id === "founder-office" ? 1 : 0)}/${hoveredRoom.capacity} people`;
+    if (hoveredRoom.kind === "warehouse") return `${fmtNum(hoveredRoom.capacity)} storage`;
+    if (hoveredRoom.kind === "factory") return `${fmtNum(hoveredRoom.capacity)}/mo production`;
+    return `${fmtNum(hoveredRoom.capacity)}/mo capacity`;
+  })() : "";
+
+  const placementFeedback = (() => {
+    if (expansionRoom || movingRoom || tool === "select" || tool === "navigate") return null;
+    if (tool === "path") {
+      const tileCount = pathDraft ? straightTiles(pathDraft.start, pathDraft.end).filter((tile) => !paths.some((path) => path.x === tile.x && path.y === tile.y)).length : 1;
+      return {
+        valid: true,
+        title: pathDraft ? `${tileCount} path tile${tileCount === 1 ? "" : "s"}` : "Draw a campus path",
+        detail: pathDraft ? `${fmtMoney(tileCount * CAMPUS_PATH_COST)} · release to build` : "Drag from the entrance or any connected path",
+      };
+    }
+    const meta = FACILITY_DEFS[tool];
+    const [w, h] = meta.size;
+    const candidate = { x: hover.x, y: hover.y, w, h };
+    const inBounds = hover.x >= 0 && hover.y >= 0 && hover.x + w <= MAP && hover.y + h <= MAP;
+    const coversPath = paths.some((path) => path.x >= hover.x && path.x < hover.x + w && path.y >= hover.y && path.y < hover.y + h);
+    const collision = rooms.some((room) => overlaps(candidate, room));
+    const connected = inBounds && roomTouchesConnectedPath(world, candidate);
+    const valid = inBounds && !coversPath && !collision && connected;
+    const reason = !inBounds ? "Move inside the campus boundary" : coversPath ? "Place beside the path—not on it" : collision ? "Another building occupies this parcel" : !connected ? "The facility must touch a connected path" : `Click to build · ${fmtMoney(meta.buildCost)}`;
+    return { valid, title: `${meta.icon} Place ${meta.label} · ${w}×${h}`, detail: reason };
+  })();
+
   const resetCamera = () => {
     const width = wrapRef.current?.clientWidth ?? 900;
     const height = wrapRef.current?.clientHeight ?? Math.max(320, window.innerHeight - 92);
     setCamera(fittedCampusCamera(width, height, rooms, compact));
   };
 
-  return <div style={{ position: "relative", height: "100%", minHeight: compact ? 0 : 520, overflow: "hidden" }}>
+  return <div className={`campus-map-view${compact ? " is-compact" : ""}`} style={{ position: "relative", height: "100%", minHeight: compact ? 0 : 520, overflow: "hidden" }}>
+    <style>{`
+      .campus-map-view{--campus-panel-radius:18px;color:${C.ink}}
+      .campus-map-view button,.campus-map-view input,.campus-map-view select{font-family:inherit}
+      .campus-map-view button{min-height:44px;transition:transform .15s ease,box-shadow .15s ease,filter .15s ease}
+      .campus-map-view button:not(:disabled):hover{filter:saturate(1.08);box-shadow:0 8px 18px rgba(17,42,67,.16)!important}
+      .campus-map-view button:not(:disabled):active{transform:translateY(1px) scale(.985)}
+      .campus-toolbar{position:absolute;left:14px;top:14px;display:flex;gap:6px;flex-wrap:wrap;max-width:calc(100% - 160px);z-index:12}
+      .campus-toolbar>*,.campus-toolbar>*>button{min-width:0}
+      .campus-build-wrap{position:relative}
+      .campus-build-menu,.campus-pulse-panel,.campus-facility-panel{scrollbar-color:#9db5c8 transparent;scrollbar-width:thin}
+      .campus-build-menu{position:absolute;left:0;top:48px;width:372px;max-height:72vh;overflow-y:auto;background:linear-gradient(180deg,#fff,#f8fbff);border:1px solid ${C.line};border-radius:16px;padding:9px;box-shadow:0 22px 54px rgba(7,34,63,.27);z-index:24;animation:campusPanelIn .2s cubic-bezier(.2,.9,.25,1)}
+      .campus-build-item{transition:background .15s ease,transform .15s ease!important}
+      .campus-build-item:not(:disabled):hover{background:#eef7ff!important;transform:translateX(2px)}
+      .campus-feedback{position:absolute;z-index:14;left:50%;transform:translateX(-50%);top:66px;width:min(490px,calc(100% - 330px));min-width:320px;display:flex;align-items:center;gap:10px;padding:10px 13px;border-radius:13px;box-shadow:0 12px 30px rgba(15,23,42,.2);pointer-events:none;animation:campusPanelIn .18s ease-out}
+      .campus-feedback{animation-name:campusFeedbackIn}
+      .campus-placement-banner{position:absolute;left:14px;right:14px;top:66px;z-index:16;display:flex;justify-content:space-between;align-items:center;gap:12px;background:rgba(255,255,255,.98);border-radius:13px;padding:9px 12px;box-shadow:0 10px 28px rgba(17,42,67,.2);color:${C.ink};font-size:12.5px;line-height:1.4;animation:campusPanelIn .2s ease-out}
+      .campus-pulse-panel{position:absolute;z-index:20;right:14px;top:66px;width:430px;max-height:calc(100% - 90px);overflow-y:auto;background:linear-gradient(180deg,rgba(255,255,255,.99),rgba(245,250,255,.99));border:1px solid ${C.line};border-radius:16px;padding:14px;box-shadow:0 22px 54px rgba(7,34,63,.28);animation:campusPanelIn .22s cubic-bezier(.2,.9,.25,1)}
+      .campus-facility-panel{position:absolute;right:18px;top:76px;width:min(410px,calc(100vw - 36px));max-height:calc(100vh - 166px);overflow-y:auto;background:linear-gradient(180deg,rgba(255,255,255,.995),rgba(247,250,255,.99));border:1px solid ${C.violet};border-radius:var(--campus-panel-radius);padding:16px;box-shadow:0 22px 54px rgba(7,34,63,.3);z-index:18;animation:campusSheetIn .25s cubic-bezier(.2,.9,.25,1)}
+      .campus-facility-panel [style*="font-size: 8"],.campus-facility-panel [style*="font-size: 9"],.campus-facility-panel [style*="font-size: 10"]{font-size:12px!important;line-height:1.45!important}
+      .campus-facility-panel [style*="font-size: 11"]{font-size:12.5px!important;line-height:1.45!important}
+      .campus-facility-panel input:not([type="checkbox"]),.campus-facility-panel select{min-height:44px;font-size:14px!important}
+      .campus-facility-panel input[type="checkbox"]{width:22px;height:22px;flex:0 0 auto;accent-color:${C.violet}}
+      .campus-pulse-panel [style*="font-size: 8"],.campus-pulse-panel [style*="font-size: 9"],.campus-pulse-panel [style*="font-size: 10"]{font-size:12px!important;line-height:1.4!important}
+      .campus-build-menu [style*="font-size: 8"],.campus-build-menu [style*="font-size: 9"],.campus-build-menu [style*="font-size: 10"]{font-size:11.5px!important;line-height:1.4!important}
+      .campus-build-menu [style*="font-size: 11"]{font-size:12.5px!important;line-height:1.4!important}
+      .campus-status-message{position:absolute;left:14px;bottom:14px;max-width:520px;background:rgba(255,255,255,.94);backdrop-filter:blur(9px);border:1px solid ${C.line};border-radius:11px;padding:9px 12px;color:${C.dim};font-size:12px;line-height:1.4;box-shadow:0 8px 22px rgba(17,42,67,.12)}
+      .campus-hover-card [style*="font-size: 9"],.campus-hover-card [style*="font-size: 10"]{font-size:12px!important;line-height:1.35!important}
+      @keyframes campusPanelIn{from{opacity:0;transform:translateY(-7px) scale(.985)}to{opacity:1;transform:none}}
+      @keyframes campusFeedbackIn{from{opacity:0;transform:translate(-50%,-7px) scale(.985)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+      @keyframes campusSheetIn{from{opacity:0;transform:translateX(18px) scale(.985)}to{opacity:1;transform:none}}
+      @media(max-width:979px){
+        .campus-toolbar{left:7px;right:7px;top:7px;max-width:none;display:grid;grid-template-columns:minmax(52px,1fr) minmax(62px,1.12fr) minmax(72px,1.25fr) 44px 44px 44px;gap:4px}
+        .campus-toolbar button{width:100%;min-height:44px!important;padding:8px 6px!important;font-size:12px!important;white-space:nowrap}
+        .campus-build-menu{position:absolute;left:0;right:auto;top:48px;width:min(372px,calc(100vw - 22px));max-height:calc(100dvh - 225px);padding:9px;border-radius:16px}
+        .campus-feedback{top:60px;width:calc(100% - 14px);min-width:0;padding:9px 11px}
+        .campus-placement-banner{left:7px;right:7px;top:60px;display:grid;grid-template-columns:minmax(0,1fr) auto;font-size:12px;padding:9px 10px}
+        .campus-pulse-panel{left:7px;right:7px;top:60px;width:auto;max-height:calc(100% - 68px);padding:13px;border-radius:16px}
+        .campus-facility-panel{left:6px;right:6px;bottom:6px;top:auto;width:auto;max-height:min(62%,560px);padding:14px;padding-bottom:calc(14px + env(safe-area-inset-bottom));border-radius:20px 20px 13px 13px;animation:campusSheetUp .25s cubic-bezier(.2,.9,.25,1)}
+        .campus-status-message{left:7px;right:7px;bottom:7px;max-width:none;font-size:12px;padding:8px 10px}
+        .campus-facility-panel input:not([type="checkbox"]),.campus-facility-panel select{font-size:16px!important}
+      }
+      @media(max-width:370px){
+        .campus-toolbar{grid-template-columns:minmax(48px,1fr) minmax(58px,1.12fr) minmax(66px,1.2fr) 44px 44px}
+        .campus-center-btn{display:none}
+        .campus-facility-panel{max-height:66%}
+      }
+      @media(max-width:500px){.campus-build-menu{left:calc(-100% + 4px)}}
+      @media(max-width:780px){
+        .campus-facility-panel{bottom:calc(62px + env(safe-area-inset-bottom))}
+        .campus-pulse-panel{bottom:calc(62px + env(safe-area-inset-bottom));max-height:none}
+        .campus-status-message{bottom:calc(62px + env(safe-area-inset-bottom))}
+      }
+      @media(max-width:390px){
+        .campus-facility-panel{bottom:6px}
+        .campus-pulse-panel{bottom:0}
+        .campus-status-message{bottom:7px}
+      }
+      @media(max-height:650px) and (max-width:979px){
+        .campus-build-menu{max-height:calc(100dvh - 225px)}
+        .campus-facility-panel{max-height:72%}
+        .campus-pulse-panel{max-height:calc(100% - 64px)}
+      }
+      @keyframes campusSheetUp{from{opacity:0;transform:translateY(24px) scale(.99)}to{opacity:1;transform:none}}
+      @media(prefers-reduced-motion:reduce){.campus-map-view *{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+    `}</style>
     <div ref={wrapRef} style={{ position: "absolute", inset: 0, background: "#e5ece7", overflow: "hidden" }}>
       <canvas ref={canvasRef}
-        onPointerDown={(e) => { const tile = pointerTile(e.clientX, e.clientY, e.currentTarget); drag.current = { active: true, moved: false, x: e.clientX, y: e.clientY }; pathStart.current = !expansionTargetId && !moveTargetId && tool === "path" ? tile : null; if (!expansionTargetId && !moveTargetId && tool === "path") setPathDraft({ start: tile, end: tile }); e.currentTarget.setPointerCapture(e.pointerId); }}
+        role="img"
+        aria-label="Interactive company campus. Select a facility to inspect it, or use the build controls to place paths and buildings."
+        onPointerDown={(e) => {
+          const tile = pointerTile(e.clientX, e.clientY, e.currentTarget);
+          const rect = e.currentTarget.getBoundingClientRect();
+          const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+          drag.current = { active: true, moved: false, x: e.clientX, y: e.clientY, originX: e.clientX, originY: e.clientY, threshold: e.pointerType === "touch" ? 14 : 7 };
+          if (!expansionTargetId && !moveTargetId && (tool === "select" || tool === "navigate")) setPressedRoomId(pickRoomAtScreen(sx, sy)?.id ?? null);
+          pathStart.current = !expansionTargetId && !moveTargetId && tool === "path" ? tile : null;
+          if (!expansionTargetId && !moveTargetId && tool === "path") setPathDraft({ start: tile, end: tile });
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
         onPointerMove={(e) => {
-          const t = pointerTile(e.clientX, e.clientY, e.currentTarget); setHover(t);
+          const rect = e.currentTarget.getBoundingClientRect();
+          const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+          const t = pointerTile(e.clientX, e.clientY, e.currentTarget); setHover(t); setHoverPoint({ x: sx, y: sy });
+          if (e.pointerType !== "touch" && (tool === "select" || tool === "navigate") && !expansionTargetId && !moveTargetId) setHoveredRoomId(pickRoomAtScreen(sx, sy)?.id ?? null);
+          else setHoveredRoomId(null);
           if (!drag.current.active) return;
           const dx = e.clientX - drag.current.x, dy = e.clientY - drag.current.y;
           if (tool === "path" && pathStart.current) { const tile = pointerTile(e.clientX, e.clientY, e.currentTarget); setPathDraft({ start: pathStart.current, end: tile }); }
-          if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true;
+          const totalTravel = Math.abs(e.clientX - drag.current.originX) + Math.abs(e.clientY - drag.current.originY);
+          if (totalTravel > drag.current.threshold) { drag.current.moved = true; setPressedRoomId(null); setHoveredRoomId(null); }
           if (!expansionTargetId && !moveTargetId && (tool === "select" || tool === "navigate") && drag.current.moved) { setCamera((c) => ({ ...c, x: c.x + dx, y: c.y + dy })); drag.current.x = e.clientX; drag.current.y = e.clientY; }
         }}
         onPointerUp={(e) => {
@@ -744,39 +903,68 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
             setPathDraft(null); pathStart.current = null;
           } else if (!drag.current.moved) {
             if (tool === "select" || tool === "navigate") {
-              const r = pickRoomAtScreen(sx, sy); setSelectedId(r?.id ?? null);
+              const r = pickRoomAtScreen(sx, sy); setSelectedId(r?.id ?? null); setPulseOpen(false); setBuildMenuOpen(false);
               setMessage(r ? `${r.name} selected.` : "Empty parcel. Use Build to extend paths or place a connected facility.");
             } else { const t = pointerTile(e.clientX, e.clientY, e.currentTarget); place(tool, t.x, t.y); }
           }
           drag.current.active = false;
+          setPressedRoomId(null);
+          if (e.pointerType === "touch") setHoveredRoomId(null);
         }}
-        style={{ display: "block", cursor: tool === "select" || tool === "navigate" ? "grab" : "crosshair", touchAction: "none" }} />
+        onPointerCancel={() => { drag.current.active = false; pathStart.current = null; setPathDraft(null); setPressedRoomId(null); setHoveredRoomId(null); }}
+        onPointerLeave={() => { if (!drag.current.active) { setHoveredRoomId(null); setPressedRoomId(null); } }}
+        style={{ display: "block", cursor: tool === "select" || tool === "navigate" ? hoveredRoomId ? "pointer" : drag.current.active ? "grabbing" : "grab" : "crosshair", touchAction: "none" }} />
 
-      <div style={{ position: "absolute", left: compact ? 7 : 14, top: compact ? 7 : 14, right: compact ? 7 : undefined, display: "flex", gap: compact ? 4 : 6, flexWrap: "wrap", maxWidth: compact ? "none" : "calc(100% - 160px)", zIndex: 6 }}>
-        <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: tool === "select" ? C.violet : "rgba(255,255,255,.94)", color: tool === "select" ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => { setExpansionTargetId(null); setMoveTargetId(null); setTool("select"); setMessage("Click a building footprint to inspect it. Drag empty ground to move the campus."); }}>↖ {compact ? "Map" : "Campus"}</button>
-        <BuildMenu compact={compact} current={tool} world={world} cash={world.player.cash} hasOffice={rooms.some((r) => r.kind === "office")} choose={(kind) => { setExpansionTargetId(null); setMoveTargetId(null); setTool(kind); setSelectedId(null); setMessage(kind === "path" ? "Path mode: drag from any connected path tile. Blue = existing, green = new, red = blocked." : `Build mode: place ${!rooms.some((r) => r.kind === "office") && kind === "office" ? "your compact 2×2 Founder Office I" : FACILITY_DEFS[kind].label.toLowerCase()} beside the connected path.`); }} />
-        <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: pulseOpen ? C.navy : "rgba(255,255,255,.94)", color: pulseOpen ? "white" : attentionRooms.length ? C.red : C.dim, borderColor: attentionRooms.length ? "#fca5a5" : C.line }} onClick={() => { setPulseOpen((value) => !value); setSelectedId(null); }}>◉ Pulse{attentionRooms.length ? ` · ${attentionRooms.length}` : ""}</button>
-        <button aria-label="Zoom out" style={{ ...ctrlBtn, minWidth: compact ? 40 : undefined, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.max(.38, c.zoom - .08) }))}>−</button>
-        <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={resetCamera}>{compact ? "⌖" : "Center"}</button>
-        <button aria-label="Zoom in" style={{ ...ctrlBtn, minWidth: compact ? 40 : undefined, minHeight: compact ? 40 : undefined, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.min(1.15, c.zoom + .08) }))}>＋</button>
+      {hoveredRoom && hoveredStatus && !compact && !drag.current.active && <div className="campus-hover-card" style={{
+        position: "absolute",
+        left: Math.max(12, Math.min(hoverPoint.x + 18, (wrapRef.current?.clientWidth ?? 980) - 286)),
+        top: Math.max(72, Math.min(hoverPoint.y + 16, (wrapRef.current?.clientHeight ?? 620) - 154)),
+        width: 258, zIndex: 7, pointerEvents: "none", color: "white",
+        background: "linear-gradient(145deg,rgba(17,42,67,.97),rgba(30,58,88,.96))",
+        border: "1px solid rgba(255,255,255,.24)", borderRadius: 13, padding: "11px 12px",
+        boxShadow: "0 14px 34px rgba(15,23,42,.28)", backdropFilter: "blur(8px)",
+      }}>
+        <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+          <span style={{ width: 34, height: 34, display: "grid", placeItems: "center", borderRadius: 10, background: "rgba(255,255,255,.13)", fontSize: 20 }}>{facilityDefForRoom(hoveredRoom).icon}</span>
+          <div style={{ minWidth: 0 }}><b style={{ display: "block", fontSize: 13.5, lineHeight: 1.15 }}>{hoveredRoom.name}</b><span style={{ display: "block", marginTop: 2, color: "rgba(255,255,255,.65)", fontSize: 10.5 }}>{TEAM_LABEL[hoveredRoom.team]}</span></div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: 6, marginTop: 9 }}>
+          <div style={{ borderRadius: 8, padding: "7px 8px", background: "rgba(255,255,255,.09)" }}><span style={{ display: "block", color: "rgba(255,255,255,.58)", fontSize: 9, fontWeight: 800, letterSpacing: .45 }}>ACTIVITY</span><b style={{ display: "block", marginTop: 2, fontSize: 10.5, color: hoveredStatus.tone === "blocked" || hoveredStatus.tone === "critical" ? "#fca5a5" : hoveredStatus.tone === "warn" || hoveredStatus.tone === "attention" ? "#fcd34d" : "#a7f3d0" }}>{hoveredStatus.label}</b></div>
+          <div style={{ borderRadius: 8, padding: "7px 8px", background: "rgba(255,255,255,.09)" }}><span style={{ display: "block", color: "rgba(255,255,255,.58)", fontSize: 9, fontWeight: 800, letterSpacing: .45 }}>CAPACITY</span><b style={{ display: "block", marginTop: 2, fontSize: 10.5 }}>{hoveredCapacity}</b></div>
+        </div>
+        <div style={{ marginTop: 8, color: "#bae6fd", fontSize: 10.5, fontWeight: 800 }}>Click to inspect and manage →</div>
+      </div>}
+
+      {placementFeedback && <div className="campus-feedback" role="status" aria-live="polite" style={{ color: placementFeedback.valid ? "#065f46" : "#991b1b", background: placementFeedback.valid ? "rgba(236,253,245,.97)" : "rgba(254,242,242,.97)", border: `2px solid ${placementFeedback.valid ? "#34d399" : "#f87171"}` }}>
+        <span style={{ width: 30, height: 30, flex: "0 0 auto", display: "grid", placeItems: "center", borderRadius: 999, color: "white", background: placementFeedback.valid ? "#059669" : "#dc2626", fontWeight: 1000, fontSize: 15 }}>{placementFeedback.valid ? "✓" : "!"}</span>
+        <div style={{ minWidth: 0 }}><b style={{ display: "block", fontSize: 13 }}>{placementFeedback.title}</b><span style={{ display: "block", marginTop: 2, fontSize: 12, lineHeight: 1.35 }}>{placementFeedback.detail}</span></div>
+      </div>}
+
+      <div className="campus-toolbar" role="toolbar" aria-label="Campus controls">
+        <button aria-pressed={tool === "select"} style={{ ...ctrlBtn, background: tool === "select" ? C.violet : "rgba(255,255,255,.94)", color: tool === "select" ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => { setExpansionTargetId(null); setMoveTargetId(null); setPulseOpen(false); setBuildMenuOpen(false); setSelectedId(null); setTool("select"); setMessage("Click a building footprint to inspect it. Drag empty ground to move the campus."); }}>↖ {compact ? "Map" : "Campus"}</button>
+        <BuildMenu compact={compact} open={buildMenuOpen} onOpenChange={(open) => { setBuildMenuOpen(open); if (open) { setPulseOpen(false); setSelectedId(null); setExpansionTargetId(null); setMoveTargetId(null); } }} current={tool} world={world} cash={world.player.cash} hasOffice={rooms.some((r) => r.kind === "office")} choose={(kind) => { setExpansionTargetId(null); setMoveTargetId(null); setPulseOpen(false); setBuildMenuOpen(false); setTool(kind); setSelectedId(null); setMessage(kind === "path" ? "Path mode: drag from any connected path tile. Blue = existing, green = new, red = blocked." : `Build mode: place ${!rooms.some((r) => r.kind === "office") && kind === "office" ? "your compact 2×2 Founder Office I" : FACILITY_DEFS[kind].label.toLowerCase()} beside the connected path.`); }} />
+        <button aria-expanded={pulseOpen} aria-controls="campus-pulse-panel" style={{ ...ctrlBtn, background: pulseOpen ? C.navy : "rgba(255,255,255,.94)", color: pulseOpen ? "white" : attentionRooms.length ? C.red : C.dim, borderColor: attentionRooms.length ? "#fca5a5" : C.line }} onClick={() => { setPulseOpen((value) => !value); setBuildMenuOpen(false); setExpansionTargetId(null); setMoveTargetId(null); setSelectedId(null); }}>◉ Pulse{attentionRooms.length ? ` · ${attentionRooms.length}` : ""}</button>
+        <button aria-label="Zoom out" title="Zoom out" style={{ ...ctrlBtn, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.max(.38, c.zoom - .08) }))}>−</button>
+        <button className="campus-center-btn" aria-label="Center campus" title="Center campus" style={{ ...ctrlBtn, background: "rgba(255,255,255,.94)" }} onClick={resetCamera}>{compact ? "⌖" : "Center"}</button>
+        <button aria-label="Zoom in" title="Zoom in" style={{ ...ctrlBtn, background: "rgba(255,255,255,.94)" }} onClick={() => setCamera((c) => ({ ...c, zoom: Math.min(1.15, c.zoom + .08) }))}>＋</button>
       </div>
-      {expansionRoom && expansionSize && <div style={{ position:"absolute", left:compact ? 7 : 14, right:compact ? 7 : 14, top:compact ? 56 : 62, zIndex:9, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, background:"rgba(255,255,255,.97)", border:`1px solid ${C.violet}`, borderRadius:10, padding:"8px 10px", boxShadow:"0 8px 24px rgba(17,42,67,.18)", color:C.ink, fontSize:10.5 }}><span><b>Expansion placement:</b> choose a {expansionSize[0]}×{expansionSize[1]} footprint for {expansionRoom.name}. Green fits; red is blocked.</span><button style={ctrlBtn} onClick={() => { setExpansionTargetId(null); setSelectedId(expansionRoom.id); setMessage("Expansion cancelled."); }}>Cancel</button></div>}
-      {movingRoom && <div style={{ position:"absolute", left:compact ? 7 : 14, right:compact ? 7 : 14, top:compact ? 56 : 62, zIndex:9, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, background:"rgba(255,255,255,.97)", border:`1px solid ${C.cyan}`, borderRadius:10, padding:"8px 10px", boxShadow:"0 8px 24px rgba(17,42,67,.18)", color:C.ink, fontSize:10.5 }}><span><b>Move facility:</b> choose a connected {movingRoom.w}×{movingRoom.h} parcel for {movingRoom.name}. Cost {fmtMoney(facilityMoveCost(movingRoom))}; everything inside is preserved.</span><button style={ctrlBtn} onClick={() => { setMoveTargetId(null); setSelectedId(movingRoom.id); setMessage("Move cancelled."); }}>Cancel</button></div>}
-      {pulseOpen && !expansionRoom && !movingRoom && <div style={compact ? { position: "absolute", zIndex: 10, left: 7, right: 7, top: 58, maxHeight: "56%", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.line}`, borderRadius: 13, padding: 11, boxShadow: "0 14px 38px rgba(17,42,67,.24)" } : { position: "absolute", zIndex: 10, right: 14, top: 58, width: 420, maxHeight: "calc(100% - 82px)", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.line}`, borderRadius: 13, padding: 12, boxShadow: "0 14px 38px rgba(17,42,67,.24)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}><div><div style={{ color: C.violet, fontSize: 8, fontWeight: 900, letterSpacing: .7 }}>LIVE OPERATING VIEW</div><b style={{ display: "block", fontSize: 15, marginTop: 2 }}>Campus pulse</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>The company’s physical state at a glance.</div></div><button style={ctrlBtn} onClick={() => setPulseOpen(false)}>✕</button></div>
+      {expansionRoom && expansionSize && <div className="campus-placement-banner" role="status" style={{ border: `2px solid ${C.violet}` }}><span><b>Expansion placement:</b> choose a {expansionSize[0]}×{expansionSize[1]} footprint for {expansionRoom.name}. Green fits; red is blocked.</span><button style={ctrlBtn} onClick={() => { setExpansionTargetId(null); setSelectedId(expansionRoom.id); setMessage("Expansion cancelled."); }}>Cancel</button></div>}
+      {movingRoom && <div className="campus-placement-banner" role="status" style={{ border: `2px solid ${C.cyan}` }}><span><b>Move facility:</b> choose a connected {movingRoom.w}×{movingRoom.h} parcel for {movingRoom.name}. Cost {fmtMoney(facilityMoveCost(movingRoom))}; everything inside is preserved.</span><button style={ctrlBtn} onClick={() => { setMoveTargetId(null); setSelectedId(movingRoom.id); setMessage("Move cancelled."); }}>Cancel</button></div>}
+      {pulseOpen && !expansionRoom && !movingRoom && <div id="campus-pulse-panel" className="campus-pulse-panel" role="dialog" aria-label="Campus operating pulse">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}><div><div style={{ color: C.violet, fontSize: 8, fontWeight: 900, letterSpacing: .7 }}>LIVE OPERATING VIEW</div><b style={{ display: "block", fontSize: 15, marginTop: 2 }}>Campus pulse</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>The company’s physical state at a glance.</div></div><button aria-label="Close campus pulse" style={ctrlBtn} onClick={() => setPulseOpen(false)}>✕</button></div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6, marginTop: 10 }}><CampusKpi icon="👥" label="Office seats" value={`${staffedSeats}/${totalSeats}`} detail={totalSeats ? `${Math.round(staffedSeats / totalSeats * 100)}% occupied` : "Build the first office"} /><CampusKpi icon="📦" label="Warehouse" value={warehouseUnits ? `${Math.round(warehouseUtil * 100)}%` : "None"} detail={`${fmtNum(warehouseUsed)} / ${fmtNum(warehouseUnits)} space`} tone={warehouseUtil > .85 ? "warn" : undefined} /><CampusKpi icon="🏭" label="Production" value={`${ownBatches.length + outsourceBatches.length} live`} detail={`${fmtNum(factoryUnits + supplierUnits)} monthly capacity`} /><CampusKpi icon="🛍" label="Products" value={String(activeSkus.length)} detail={`${fmtNum(inventoryOnHand)} units ready`} /></div>
         {(attentionRooms.length > 0 || blockers.length > 0) && <div style={{ marginTop: 11 }}><b style={{ fontSize: 10.5, color: C.red }}>Needs attention</b><div style={{ display: "grid", gap: 5, marginTop: 6 }}>{attentionRooms.map(({ room, status }) => <button key={room.id} onClick={() => { setPulseOpen(false); setSelectedId(room.id); }} style={{ border: "1px solid #fecaca", background: "#fff7f7", color: C.ink, borderRadius: 8, padding: 8, textAlign: "left", cursor: "pointer", fontSize: 10 }}><b>{room.name}</b><span style={{ color: C.red, marginLeft: 6 }}>{status.label}</span></button>)}{blockers.filter((blocker) => !attentionRooms.some(({ status }) => blocker.toLowerCase().includes(status.label.toLowerCase()))).slice(0, 4).map((blocker) => <div key={blocker} style={{ border: "1px solid #fed7aa", background: "#fffaf0", color: "#92400e", borderRadius: 8, padding: 8, fontSize: 10 }}>{blocker}</div>)}</div></div>}
         {flow.length > 0 && <div style={{ marginTop: 11 }}><b style={{ fontSize: 10.5 }}>Product flow</b><div style={{ display: "grid", gap: 6, marginTop: 6 }}>{flow.slice(0, 4).map((item) => <div key={item.room.id} style={{ border: `1px solid ${C.line}`, borderRadius: 8, padding: 8 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10.5 }}><b>{item.sku?.name ?? item.label}</b><span style={{ color: item.productionReady && item.inventoryReady && item.routeReady ? C.green : C.amber }}>{item.productionReady && item.inventoryReady && item.routeReady ? "FLOWING" : "INCOMPLETE"}</span></div><div style={{ display: "flex", gap: 4, marginTop: 5 }}><FlowStep ok={item.productionReady} label="Make" detail="" /><FlowStep ok={item.inventoryReady} label="Store" detail="" /><FlowStep ok={item.routeReady} label="Sell" detail="" /></div></div>)}</div></div>}
       </div>}
       {!compact && <div style={{ position: "absolute", right: 14, top: 14, background: "rgba(17,42,67,.88)", color: "white", borderRadius: 9, padding: "7px 10px", fontSize: 10, fontWeight: 800 }}>◈ {world.company} Campus</div>}
       {!compact && !selected && !pulseOpen && liveWorkItems.length > 0 && <div className="campus-work-stack"><div className="campus-work-title"><span>LIVE WORK</span><b>{liveWorkItems.length} active</b></div>{liveWorkItems.map((item) => <button key={item.id} onClick={() => onNavigate(item.top, item.sub)}><span className="campus-progress-ring" style={{ background: `conic-gradient(${item.color} ${Math.max(3, Math.min(100, item.progress * 100))}%,rgba(148,163,184,.22) 0)` }}><i>{item.icon}</i></span><span><b>{item.label}</b><small>{item.detail}</small><em><i style={{ width: `${Math.max(3, Math.min(100, item.progress * 100))}%`, background: item.color }}/></em></span><strong>{Math.round(item.progress * 100)}%</strong></button>)}</div>}
-      {!compact && <div style={{ position: "absolute", left: 14, bottom: 14, maxWidth: 520, background: "rgba(255,255,255,.92)", backdropFilter: "blur(7px)", border: `1px solid ${C.line}`, borderRadius: 9, padding: "7px 10px", color: C.dim, fontSize: 10.5 }}>{message}</div>}
+      {!placementFeedback && !expansionRoom && !movingRoom && !pulseOpen && !selected && <div className="campus-status-message" role="status">{message}</div>}
     </div>
 
-    {selected && !expansionTargetId && !moveTargetId && <div style={compact ? { position: "absolute", left: 6, right: 6, bottom: 6, top: "auto", width: "auto", maxHeight: "56%", overflowY: "auto", WebkitOverflowScrolling: "touch", background: "rgba(255,255,255,.99)", border: `1px solid ${C.violet}`, borderRadius: "16px 16px 12px 12px", padding: 12, paddingBottom: "calc(12px + env(safe-area-inset-bottom))", boxShadow: "0 -12px 38px rgba(17,42,67,.25)", zIndex: 8 } : { position: "absolute", right: 18, top: 68, width: "min(390px,calc(100vw - 36px))", maxHeight: "calc(100vh - 158px)", overflowY: "auto", background: "rgba(255,255,255,.98)", border: `1px solid ${C.violet}`, borderRadius: 15, padding: 15, boxShadow: "0 18px 44px rgba(17,42,67,.24)", zIndex: 8 }}>
+    {selected && !expansionTargetId && !moveTargetId && <div className="campus-facility-panel" role="dialog" aria-label={`${selected.name} facility controls`}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}>
         <div><div style={{ color: C.faint, fontSize: 8.5, fontWeight: 900, letterSpacing: .8 }}>FACILITY</div><div style={{ fontWeight: 900, fontSize: 16, marginTop: 2 }}>{facilityDefForRoom(selected).icon} {selected.name}</div><div style={{ color: C.dim, fontSize: 10.5, marginTop: 3, lineHeight: 1.4 }}>{facilityDefForRoom(selected).description}</div></div>
-        <button style={ctrlBtn} onClick={() => { setSelectedId(null); setExpansionTargetId(null); }}>✕</button>
+        <button aria-label="Close facility controls" style={ctrlBtn} onClick={() => { setSelectedId(null); setExpansionTargetId(null); }}>✕</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6, marginTop: 10 }}>
         <div style={facilityMetric}><span>Status</span><b style={{ color: selectedStatus?.tone === "critical" ? C.red : selectedStatus?.tone === "warn" ? C.amber : C.violet }}>{selectedStatus?.label}</b></div>
@@ -825,13 +1013,13 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
       {selected.kind === "outsourcing" && <ActivityMini title="Supplier pipeline" skus={outsourceBatches} empty="No outsourced batches currently inbound." />}
       <div style={{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}><div><b style={{ fontSize: 11.5 }}>Facility controls</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>Move keeps staff, upgrades and settings. Expansion needs a larger footprint. Demolition is blocked while the building is operationally required.</div></div></div>
-        <button disabled={world.player.cash < facilityMoveCost(selected)} title={world.player.cash < facilityMoveCost(selected) ? `Need ${fmtMoney(facilityMoveCost(selected) - world.player.cash)} more cash.` : undefined} style={{ ...ctrlBtn, width: "100%", marginTop: 8, borderColor: C.cyan, color: world.player.cash >= facilityMoveCost(selected) ? C.cyan : C.faint, opacity: world.player.cash >= facilityMoveCost(selected) ? 1 : .5 }} onClick={() => { setConfirmDemolishId(null); setMoveTargetId(selected.id); setTool("select"); setMessage(`Move placement: choose a connected ${selected.w}×${selected.h} parcel for ${selected.name}.`); }}>↔ Move facility · {fmtMoney(facilityMoveCost(selected))}</button>
+        <button disabled={world.player.cash < facilityMoveCost(selected)} title={world.player.cash < facilityMoveCost(selected) ? `Need ${fmtMoney(facilityMoveCost(selected) - world.player.cash)} more cash.` : undefined} style={{ ...ctrlBtn, width: "100%", marginTop: 8, borderColor: C.cyan, color: world.player.cash >= facilityMoveCost(selected) ? C.cyan : C.faint, opacity: world.player.cash >= facilityMoveCost(selected) ? 1 : .5 }} onClick={() => { setConfirmDemolishId(null); setPulseOpen(false); setBuildMenuOpen(false); setMoveTargetId(selected.id); setTool("select"); setMessage(`Move placement: choose a connected ${selected.w}×${selected.h} parcel for ${selected.name}.`); }}>↔ Move facility · {fmtMoney(facilityMoveCost(selected))}</button>
       </div>
       <div style={{ marginTop: 10, borderTop: `1px solid ${C.line}`, paddingTop: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "start" }}><div><b style={{ fontSize: 11.5 }}>Expand / upgrade facility</b><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>{"Every expansion claims a larger physical footprint. After choosing Expand, place the enlarged building again on the grid; it may overlap its own current footprint but not paths or other facilities."}</div></div>{selectedUpgrade ? <span style={{ color: C.violet, fontWeight: 900, fontSize: 10 }}>{selected.kind === "office" ? `${selectedUpgrade.currentLabel} → ${selectedUpgrade.nextLabel}` : `L${selectedUpgrade.currentLevel} → L${selectedUpgrade.nextLevel}`}</span> : <span style={{ color: C.green, fontWeight: 900, fontSize: 10 }}>MAX</span>}</div>
         {selectedUpgrade ? <><button disabled={Boolean(selectedUpgradeGate) || world.player.cash < selectedUpgrade.cost} title={selectedUpgradeGate ?? (world.player.cash < selectedUpgrade.cost ? `Need ${fmtMoney(selectedUpgrade.cost - world.player.cash)} more cash.` : undefined)} style={{ ...ctrlBtn, width: "100%", marginTop: 8, borderColor: C.violet, color: !selectedUpgradeGate && world.player.cash >= selectedUpgrade.cost ? C.violet : C.faint, opacity: !selectedUpgradeGate && world.player.cash >= selectedUpgrade.cost ? 1 : .5 }} onClick={() => {
           if (!selectedNextSize) return;
-          setExpansionTargetId(selected.id); setTool("select");
+          setPulseOpen(false); setBuildMenuOpen(false); setExpansionTargetId(selected.id); setTool("select");
           setMessage(`Expansion placement: choose a new ${selectedNextSize[0]}×${selectedNextSize[1]} footprint for ${selected.name}. The new footprint may overlap the existing building, but not paths or other facilities.`);
         }}>{selectedNextSize ? `${selected.w}×${selected.h} → ${selectedNextSize[0]}×${selectedNextSize[1]} · ` : ""}{selectedType === "training_center" ? `+${fmtNum(selectedUpgrade.capacityGain)} training slots · ${fmtMoney(selectedUpgrade.cost)}` : selected.kind === "office" ? `+${fmtNum(selectedUpgrade.capacityGain)} seats · ${fmtMoney(selectedUpgrade.cost)}` : `+${fmtNum(selectedUpgrade.capacityGain)} capacity · ${fmtMoney(selectedUpgrade.cost)}` }</button>{selectedUpgradeGate ? <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ {selectedUpgradeGate}</div> : world.player.cash < selectedUpgrade.cost && <div style={{ color: C.amber, fontSize: 9.5, marginTop: 5 }}>↳ Need {fmtMoney(selectedUpgrade.cost - world.player.cash)} more cash for this upgrade.</div>}</> : <div style={{ color: C.faint, fontSize: 10, marginTop: 6 }}>This facility is fully upgraded.</div>}
       </div>
@@ -840,8 +1028,7 @@ export function CompanyMapView({ world, openCreator, updateRooms, buildRoom, bui
   </div>;
 }
 
-function BuildMenu({ current, cash, choose, compact = false, hasOffice, world }: { current: BuildTool | "select" | "navigate"; cash: number; choose: (kind: BuildTool) => void; compact?: boolean; hasOffice: boolean; world: World }) {
-  const [open, setOpen] = useState(false);
+function BuildMenu({ current, cash, choose, compact = false, hasOffice, world, open, onOpenChange }: { current: BuildTool | "select" | "navigate"; cash: number; choose: (kind: BuildTool) => void; compact?: boolean; hasOffice: boolean; world: World; open: boolean; onOpenChange: (open: boolean) => void }) {
   const activeBuild = current !== "select" && current !== "navigate";
   const groups: Array<(typeof FACILITY_DEFS)[FacilityTypeId]["group"]> = ["Core", "Product", "People", "Commercial", "Operations"];
   const groupMeta: Record<(typeof FACILITY_DEFS)[FacilityTypeId]["group"], { blurb: string; tint: string }> = {
@@ -864,14 +1051,14 @@ function BuildMenu({ current, cash, choose, compact = false, hasOffice, world }:
     })
     .sort((a, b) => Number(b.available) - Number(a.available) || a.d.buildCost - b.d.buildCost);
 
-  return <div style={{ position: "relative" }}>
-    <button style={{ ...ctrlBtn, minHeight: compact ? 40 : undefined, background: open || activeBuild ? C.violet : "rgba(255,255,255,.94)", color: open || activeBuild ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => setOpen((v) => !v)}>＋ Build</button>
-    {open && <div style={{ position: "absolute", left: 0, top: compact ? 44 : 38, width: compact ? "min(352px,calc(100vw - 20px))" : 352, maxHeight: compact ? "58vh" : "72vh", overflowY: "auto", background: "white", border: `1px solid ${C.line}`, borderRadius: 12, padding: 8, boxShadow: "0 12px 32px rgba(17,42,67,.22)", zIndex: 12 }}>
+  return <div className="campus-build-wrap">
+    <button aria-expanded={open} aria-controls="campus-build-menu" style={{ ...ctrlBtn, background: open || activeBuild ? C.violet : "rgba(255,255,255,.94)", color: open || activeBuild ? "white" : C.dim, boxShadow: "0 4px 14px rgba(30,41,59,.12)" }} onClick={() => onOpenChange(!open)}>＋ Build</button>
+    {open && <div id="campus-build-menu" className="campus-build-menu" role="dialog" aria-label="Campus build menu">
       <div style={{ padding: "6px 8px 8px", borderBottom: `1px solid ${C.grid}`, marginBottom: 6 }}>
         <div style={{ color: C.ink, fontWeight: 900, fontSize: 12.5 }}>Campus build menu</div>
         <div style={{ color: C.faint, fontSize: 9.8, marginTop: 2 }}>Facilities are grouped by function. Buildable items stay at the top of each section, locked ones show the missing requirement.</div>
       </div>
-      <button disabled={cash < CAMPUS_PATH_COST} onClick={() => { choose("path"); setOpen(false); }} style={{ width: "100%", border: 0, background: current === "path" ? C.panel2 : "transparent", padding: 9, textAlign: "left", borderRadius: 8, cursor: cash >= CAMPUS_PATH_COST ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: cash >= CAMPUS_PATH_COST ? 1 : .45 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>▰ Path</b><span style={{ color: C.faint }}>{fmtMoney(CAMPUS_PATH_COST)}/tile</span></div><div style={{ color: C.faint, fontSize: 9.5, marginTop: 2 }}>1×1 · extend from the entrance · buildings must touch connected paths</div></button>
+      <button className="campus-build-item" disabled={cash < CAMPUS_PATH_COST} onClick={() => { choose("path"); onOpenChange(false); }} style={{ width: "100%", border: 0, background: current === "path" ? C.panel2 : "transparent", padding: 10, textAlign: "left", borderRadius: 10, cursor: cash >= CAMPUS_PATH_COST ? "pointer" : "default", color: C.ink, fontSize: 12.5, opacity: cash >= CAMPUS_PATH_COST ? 1 : .45 }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>▰ Path</b><span style={{ color: C.faint }}>{fmtMoney(CAMPUS_PATH_COST)}/tile</span></div><div style={{ color: C.faint, fontSize: 10.5, marginTop: 2 }}>1×1 · extend from the entrance · buildings must touch connected paths</div></button>
       {groups.map((group) => {
         const rows = buildRows(group);
         const availableCount = rows.filter((r) => r.available).length;
@@ -887,7 +1074,7 @@ function BuildMenu({ current, cash, choose, compact = false, hasOffice, world }:
           <div style={{ padding: 6 }}>
             {rows.map(({ kind, d, affordable, founder, gate, available, capacityLabel }) => {
               const missing = gate ?? (!affordable ? `Need ${fmtMoney(d.buildCost - cash)} more cash.` : null);
-              return <button disabled={!available} title={missing ?? undefined} key={kind} onClick={() => { choose(kind); setOpen(false); }} style={{ width: "100%", border: 0, background: current === kind ? C.panel2 : available ? "transparent" : "#fafafa", padding: 9, textAlign: "left", borderRadius: 8, cursor: available ? "pointer" : "default", color: C.ink, fontSize: 11, opacity: available ? 1 : .62, marginBottom: 4 }}>
+              return <button className="campus-build-item" disabled={!available} title={missing ?? undefined} key={kind} onClick={() => { choose(kind); onOpenChange(false); }} style={{ width: "100%", border: 0, background: current === kind ? C.panel2 : available ? "transparent" : "#fafafa", padding: 10, textAlign: "left", borderRadius: 10, cursor: available ? "pointer" : "default", color: C.ink, fontSize: 12.5, opacity: available ? 1 : .62, marginBottom: 4 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
                   <b>{d.icon} {founder ? "Founder Office I" : d.label}</b>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

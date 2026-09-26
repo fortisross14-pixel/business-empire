@@ -5,6 +5,41 @@ customer cells (age × gender × class × leaning), launch products that earn aw
 from zero, negotiate distribution contracts, and manage cash through working capital —
 while competitors react and the population shifts under you.
 
+## v2.3 — Full Visual Certification
+
+- Certified the complete playable route from title screen and mode setup through campus,
+  products, market, people, research, finance, strategy, brands, IP, history and results.
+- Rebuilt the remaining dense management views as colorful, game-like workspaces with clear
+  heroes, decision hierarchy, progressive tabs, visual KPIs, empty states and contextual actions.
+- Upgraded Inventory, Distribution, Financial Analysis and Marketing into executive command
+  screens with product art, capacity gauges, partner cards, contribution ranking and campaign flow.
+- Made construction and campus panels mutually exclusive, removed phone overlay collisions and
+  improved placement, hover, selection, facility feedback and touch-safe map controls.
+- Added queued company notifications so simultaneous events are not silently discarded, plus a
+  cinematic campaign-result presentation above every other modal layer.
+- Completed laptop, tablet and portrait-phone layout passes with readable supporting type,
+  44px targets, scroll cues, bottom-sheet modals, keyboard focus and reduced-motion support.
+- Added generated menu, product, market and action artwork under `public/assets/ui`; gameplay
+  mechanics and save compatibility are preserved.
+
+## v2.2 — Game Experience & Product Command
+
+- Rebuilt the title screen as a visual game menu with a generated campus illustration,
+  clear Continue / New Game / Settings hierarchy, tactile feedback and responsive layouts.
+- Replaced the small product-detail modal with a full product command workspace. One exact
+  SKU stays in context across Summary, Versions, Sales, Market and Operations tabs.
+- Added daily SKU sales history and partner-level channel attribution. Product analytics now
+  show real 7/30/90-day units, net sales, contribution, inventory cover and channel results.
+- Added product lineage comparisons, contextual next-best actions and readable visual action
+  plaques while preserving design, manufacture, launch, archive and restore mechanics.
+- Market Intelligence now begins with an explicit Portfolio or exact live-version scope.
+  Product views compare only same-category rivals and label modeled estimates separately
+  from observable operating facts.
+- Improved campus game feel with larger interaction targets, hover and pressed states,
+  selected-building highlights, live tooltips and clearer placement guidance.
+- Raised core type sizes and tap targets across desktop, tablet and phone layouts, with a
+  reduced-motion fallback and generated art for menu, product, market and action surfaces.
+
 ## v2.1 — Business School Campaign
 
 - Rebuilt the home screen around three distinct modes: **Campaign**, **Scenarios** and **Sandbox**.

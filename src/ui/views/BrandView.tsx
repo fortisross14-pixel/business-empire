@@ -9,6 +9,7 @@ import { brandById, defaultBrandVisual } from "../../engine/brands";
 import { BrandLogoMark } from "../visualIdentity";
 import { canCreateBrand, canStartCategoryExpansion, categoryGrowthDef, companyScale } from "../../engine/growth";
 import { marketWorldView } from "../../engine/markets";
+import "./BrandIP.css";
 
 const METRICS: { key: keyof Equity; label: string; color: string }[] = [
   { key: "trust", label: "Trust", color: "#34d399" },
@@ -23,6 +24,7 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
   createBrand: (name: string, color: string, positioning: string, industryId?: string, visual?: BrandVisualRecipe) => boolean;
   startCategoryExpansion: (productKey: string) => boolean;
 }) {
+  const [activeTab, setActiveTab] = useState<"portfolio" | "equity" | "vision">("portfolio");
   const [selectedBrandId, setSelectedBrandId] = useState(world.primaryBrandId);
   const selectedBrand = brandById(world, selectedBrandId);
   const selectedMarketWorld = selectedBrand.industryId === world.industryId ? world : marketWorldView(world, selectedBrand.industryId);
@@ -31,7 +33,8 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
   const earned = earnedSignals(selectedMarketWorld, selectedBrand.id);
   const selectedSkus = world.player.skus.filter((s) => s.brandId === selectedBrand.id);
   const hasProducts = selectedSkus.length > 0;
-  const scale = companyScale(world);
+  const lifetimeRevenue = world.chronicle?.lifetimeRevenue ?? 0;
+  const brandContribution = selectedSkus.reduce((sum, sku) => sum + (sku.contributionTotal ?? 0), 0);
 
   if (world.brands.length === 0) {
     return <div style={{ display: "grid", gap: 14 }}>
@@ -59,12 +62,37 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
   });
 
   return (
-    <div>
-      <CompanyGrowthPanel world={world} />
-      <BrandPortfolio world={world} selectedBrandId={selectedBrand.id} onSelect={setSelectedBrandId} createBrand={createBrand} />
-      <Panel title={`${selectedCfg.label} Category Access`}><div style={{ color: C.dim, fontSize: 12, lineHeight: 1.5 }}>Category development is managed centrally from <b>Company → Research</b>. This brand can currently design: <b>{(world.player.businesses?.[selectedBrand.industryId]?.unlockedCategories ?? []).map((k) => selectedCfg.products.find((p) => p.key === k)?.label ?? k).join(", ") || "none"}</b>.</div></Panel>
+    <div className="brand-studio">
+      <section className="brand-hero" style={{ "--brand-accent": selectedBrand.color } as React.CSSProperties}>
+        <div className="brand-hero-copy">
+          <div className="studio-kicker">BRAND STUDIO · {selectedCfg.label.toUpperCase()}</div>
+          <div className="brand-hero-title"><BrandLogoMark brand={selectedBrand} size={72} /><div><h1>{selectedBrand.name}</h1><p>Shape what customers remember, trust and pay more for.</p></div></div>
+          <div className="brand-hero-pills"><span>{selectedBrand.positioning} positioning</span><span>{selectedSkus.length} products</span><span>{Math.round(avg.trust * 100)} trust</span></div>
+        </div>
+        <div className="brand-hero-score">
+          <span>Brand contribution</span><strong className={brandContribution >= 0 ? "positive" : "negative"}>{fmtMoney(brandContribution)}</strong>
+          <small>{fmtMoney(lifetimeRevenue)} company lifetime revenue</small>
+        </div>
+        <div className="brand-orbit" aria-hidden="true"><i>★</i><i>♥</i><i>◆</i></div>
+      </section>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+      <div className="brand-switcher" aria-label="Select brand">
+        {world.brands.map((brand) => <button type="button" key={brand.id} aria-pressed={brand.id === selectedBrand.id} onClick={() => setSelectedBrandId(brand.id)} style={{ "--brand-accent": brand.color } as React.CSSProperties}><BrandLogoMark brand={brand} size={34} /><span>{brand.name}</span></button>)}
+      </div>
+
+      <nav className="studio-tabs" aria-label="Brand workspace" role="tablist">
+        <button type="button" role="tab" aria-selected={activeTab === "portfolio"} onClick={() => setActiveTab("portfolio")}><span>▦</span> Portfolio</button>
+        <button type="button" role="tab" aria-selected={activeTab === "equity"} onClick={() => setActiveTab("equity")}><span>◈</span> Customer equity</button>
+        <button type="button" role="tab" aria-selected={activeTab === "vision"} onClick={() => setActiveTab("vision")}><span>◎</span> Company vision</button>
+      </nav>
+
+      {activeTab === "portfolio" && <>
+        <CompanyGrowthPanel world={world} />
+        <BrandPortfolio world={world} selectedBrandId={selectedBrand.id} onSelect={setSelectedBrandId} createBrand={createBrand} />
+        <Panel title={`${selectedCfg.label} Category Access`}><div className="studio-help">Category development is managed centrally from <b>Company → Research</b>. This brand can currently design: <b>{(world.player.businesses?.[selectedBrand.industryId]?.unlockedCategories ?? []).map((k) => selectedCfg.products.find((p) => p.key === k)?.label ?? k).join(", ") || "none"}</b>.</div></Panel>
+      </>}
+
+      {activeTab === "equity" && <><div className="equity-explainer"><span>LIVE CUSTOMER SIGNAL</span><strong>Reputation is earned by product experience, price and channel choices.</strong><p>The filled bar is what customers think today. The marker shows where your current decisions are taking the brand.</p></div><div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <Panel title={`${selectedBrand.name} — Brand Equity`} style={{ flex: "1 1 320px" }}>
           {!hasProducts ? <div style={{ color: C.faint, fontSize: 13 }}>This brand has no products yet. Assign your next design to {selectedBrand.name} to start building its reputation.</div> : (
             <>
@@ -72,7 +100,7 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
                 <div key={m.key} style={{ marginBottom: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 }}>
                     <span style={{ color: C.ink }}>{m.label}</span>
-                    <span style={{ color: C.dim, fontFamily: "ui-monospace", fontSize: 11 }}>
+                      <span style={{ color: C.dim, fontFamily: "ui-monospace", fontSize: 13 }}>
                       {(avg[m.key] * 100).toFixed(0)} <span style={{ color: C.faint }}>→ {(earned[m.key] * 100).toFixed(0)}</span>
                     </span>
                   </div>
@@ -82,7 +110,7 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
                   </div>
                 </div>
               ))}
-              <div style={{ color: C.faint, fontSize: 11, marginTop: 6, lineHeight: 1.5 }}>
+              <div style={{ color: C.faint, fontSize: 12.5, marginTop: 6, lineHeight: 1.5 }}>
                 Solid bar = current reputation. Tick = the identity this brand's own products, pricing and channels are earning. Sister brands no longer share the same equity.
               </div>
             </>
@@ -91,7 +119,7 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
 
         <Panel title={`${selectedBrand.name} — Perception by Segment`} style={{ flex: "1 1 360px" }}>
           {!hasProducts ? <div style={{ color: C.faint, fontSize: 13 }}>No consumer perception yet.</div> : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <table className="studio-data-table" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ color: C.faint, textAlign: "right" }}><th style={{ textAlign: "left" }}>Segment</th>{METRICS.map((m) => <th key={m.key} style={{ color: m.color }}>{m.label.slice(0, 4)}</th>)}</tr></thead>
               <tbody style={{ fontFamily: "ui-monospace" }}>
                 {segRows.map((r, i) => <tr key={i} style={{ borderTop: `1px solid ${C.grid}`, textAlign: "right" }}>
@@ -106,8 +134,8 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
 
       {hasProducts && (
         <Panel title={`${selectedBrand.name} — Equity by Category`}>
-          <div style={{ color: C.faint, fontSize: 11, marginBottom: 10 }}>A brand can be trusted in cleansers and unknown in anti-aging. Category reputation remains separate inside each brand.</div>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <div className="studio-help">A brand can be trusted in one category and unknown in another. Category reputation remains separate inside each brand.</div>
+          <table className="studio-data-table" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead><tr style={{ color: C.faint, textAlign: "right" }}><th style={{ textAlign: "left" }}>Category</th>{METRICS.map((m) => <th key={m.key} style={{ color: m.color }}>{m.label.slice(0, 4)}</th>)}</tr></thead>
             <tbody style={{ fontFamily: "ui-monospace" }}>
               {Array.from(new Set(selectedSkus.map((s) => s.productKey))).map((pk) => {
@@ -121,9 +149,9 @@ export function BrandView({ world, setVision, createBrand, startCategoryExpansio
             </tbody>
           </table>
         </Panel>
-      )}
+      )}</>}
 
-      <VisionPanel world={world} setVision={setVision} />
+      {activeTab === "vision" && <VisionPanel world={world} setVision={setVision} />}
     </div>
   );
 }
@@ -134,20 +162,20 @@ function CompanyGrowthPanel({ world }: { world: World }) {
   const next = scale.nextRevenue;
   const progress = next ? Math.min(1, revenue / next) : 1;
   const launched = world.player.skus.filter((s) => s.launchTick > 0).length;
-  return <Panel title="Company Growth">
+  return <Panel title="Company Growth"><div className="growth-card">
     <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
       <div>
         <div style={{ color: C.violet, fontWeight: 800, fontSize: 20 }}>{scale.label}</div>
         <div style={{ color: C.dim, fontSize: 12, marginTop: 3 }}>{scale.description}</div>
       </div>
-      <div style={{ display: "flex", gap: 18, fontSize: 12 }}>
+      <div className="growth-stats">
         <div><div style={{ color: C.faint }}>Lifetime revenue</div><b>{fmtMoney(revenue)}</b></div>
         <div><div style={{ color: C.faint }}>Launched products</div><b>{launched}</b></div>
         <div><div style={{ color: C.faint }}>Brand capacity</div><b>{world.brands.length} / {scale.maxBrands}</b></div>
       </div>
     </div>
-    {next && <><div style={{ height: 7, background: C.grid, borderRadius: 4, marginTop: 12 }}><div style={{ height: "100%", width: `${progress * 100}%`, background: C.violet, borderRadius: 4 }} /></div><div style={{ color: C.faint, fontSize: 10.5, marginTop: 5 }}>Revenue path to next scale: {fmtMoney(revenue)} / {fmtMoney(next)}. Product-count milestones can accelerate scale as well.</div></>}
-  </Panel>;
+    {next && <><div className="studio-progress"><div style={{ width: `${progress * 100}%` }} /></div><div className="studio-caption">Revenue path to next scale: {fmtMoney(revenue)} / {fmtMoney(next)}. Product-count milestones can accelerate scale as well.</div></>}
+  </div></Panel>;
 }
 
 function BrandPortfolio({ world, selectedBrandId, onSelect, createBrand }: { world: World; selectedBrandId: string; onSelect: (id: string) => void; createBrand: (name: string, color: string, positioning: string, industryId?: string, visual?: BrandVisualRecipe) => boolean }) {
@@ -170,8 +198,8 @@ function BrandPortfolio({ world, selectedBrandId, onSelect, createBrand }: { wor
 
   const founding = world.brands.length === 0;
   return <Panel title={founding ? "Founding Brand" : "Brand Portfolio"}>
-    <div style={{ color: C.dim, fontSize: 12, marginBottom: 12 }}>{founding ? "This is the first consumer identity of the company. Build it after the Founder Office so the run begins with a real empty-lot → company → brand progression." : "Brands share the parent company's cash, people and infrastructure, but maintain separate market reputations. A focused brand architecture can cover different price tiers without muddying the original brand."}</div>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 10 }}>
+    <div className="studio-help">{founding ? "This is the first consumer identity of the company. Build it after the Founder Office so the run begins with a real empty-lot → company → brand progression." : "Brands share cash, people and infrastructure, but earn separate reputations. Use distinct brands to cover new audiences or price tiers without muddying the original."}</div>
+    <div className="brand-card-grid">
       {world.brands.map((b) => {
         const skus = world.player.skus.filter((s) => s.brandId === b.id);
         const active = skus.filter((s) => s.status === "active").length;
@@ -179,14 +207,14 @@ function BrandPortfolio({ world, selectedBrandId, onSelect, createBrand }: { wor
         const contribution = skus.reduce((a, s) => a + (s.contributionTotal ?? 0), 0);
         const eq = brandAverageEquity(world, undefined, b.id);
         const on = selectedBrandId === b.id;
-        return <button key={b.id} onClick={() => onSelect(b.id)} style={{ textAlign: "left", background: on ? C.panel2 : C.bg, border: `1px solid ${on ? b.color : C.line}`, borderRadius: 14, padding: 13, cursor: "pointer", color: C.ink }}>
+        return <button className="brand-portfolio-card" aria-pressed={on} key={b.id} onClick={() => onSelect(b.id)} style={{ "--brand-accent": b.color } as React.CSSProperties}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <BrandLogoMark brand={b} size={44} withName />
-            <span style={{ color: C.faint, fontSize: 10, textTransform: "uppercase" }}>{INDUSTRIES[b.industryId]?.label ?? b.industryId} · {b.positioning}</span>
+            <span className="brand-category-chip">{INDUSTRIES[b.industryId]?.label ?? b.industryId} · {b.positioning}</span>
           </div>
-          <div style={{ color: C.dim, fontSize: 11, marginTop: 10 }}>{skus.length} product{skus.length !== 1 ? "s" : ""} · {active} active · {Math.round(units).toLocaleString()} units</div>
-          <div style={{ color: contribution >= 0 ? C.green : C.red, fontSize: 11, marginTop: 3 }}>Lifetime contribution {fmtMoney(contribution)}</div>
-          <div style={{ color: C.faint, fontSize: 10.5, marginTop: 6 }}>Trust {Math.round(eq.trust * 100)} · Prestige {Math.round(eq.prestige * 100)} · Value {Math.round(eq.value * 100)}</div>
+          <div className="brand-card-metrics"><span><b>{skus.length}</b> products</span><span><b>{active}</b> active</span><span><b>{Math.round(units).toLocaleString()}</b> units</span></div>
+          <div className={contribution >= 0 ? "brand-contribution positive" : "brand-contribution negative"}>Lifetime contribution {fmtMoney(contribution)}</div>
+          <div className="brand-equity-snapshot"><span>Trust <b>{Math.round(eq.trust * 100)}</b></span><span>Prestige <b>{Math.round(eq.prestige * 100)}</b></span><span>Value <b>{Math.round(eq.value * 100)}</b></span></div>
         </button>;
       })}
     </div>

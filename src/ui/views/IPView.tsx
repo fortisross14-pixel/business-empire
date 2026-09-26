@@ -19,6 +19,7 @@ import {
 import { archetypeByKey } from "../../engine/productCatalog";
 import { IPBadge } from "../visualIdentity";
 import { teamEffectiveness } from "../../engine/people";
+import "./BrandIP.css";
 
 interface ActionResult { ok: boolean; reason?: string; }
 
@@ -27,44 +28,53 @@ export function IPView({ world, createIP, licenseIP }: {
   createIP: (name: string, audiencePresetId: string, productFamilies: string[]) => ActionResult;
   licenseIP: (ipId: string, years: number) => ActionResult;
 }) {
+  const [activeTab, setActiveTab] = useState<"portfolio" | "create" | "market">("portfolio");
   const owned = world.ipAssets.filter((ip) => ip.ownerType === "player");
   const licensed = world.ipAssets.filter((ip) => ip.ownerType === "external" && Boolean(activeIPContract(world, ip.id)));
   const market = world.ipAssets.filter((ip) => ip.ownerType === "external");
   const portfolioValue = companyIPPortfolioValue(world);
   const companyValue = estimatedCompanyValue(world);
 
-  return <div>
-    <Panel title="🎬 Universal IP & Licensing">
-      <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.65, maxWidth: 960 }}>
-        IP is separate from the brand on the box. The same property can travel across compatible products and industries, while brand reputation and IP popularity remain distinct.
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginTop: 14 }}>
-        <MiniStat label="Owned IP" value={String(owned.length)} />
-        <MiniStat label="Active licenses" value={String(licensed.length)} />
-        <MiniStat label="Owned IP value" value={fmtMoney(portfolioValue)} accent />
-        <MiniStat label="Royalty exposure / yr" value={fmtMoney(annualizedRoyaltyExposure(world))} />
-        <MiniStat label="Est. company value" value={fmtMoney(companyValue)} accent />
-      </div>
-    </Panel>
+  return <div className="ip-studio">
+    <section className="ip-hero">
+      <div className="ip-hero-copy"><div className="studio-kicker">CREATIVE RIGHTS & LICENSING</div><h1>Build worlds customers want to join.</h1><p>Create original characters or borrow audience power from established properties. Great fit can turn an ordinary product into a franchise.</p><button type="button" onClick={() => setActiveTab("create")}>✦ Create original IP</button></div>
+      <div className="ip-hero-art" aria-hidden="true"><span className="ip-star">★</span><span className="ip-bolt">ϟ</span><span className="ip-heart">♥</span><strong>IP</strong></div>
+      <div className="ip-hero-value"><small>Portfolio value</small><b>{fmtMoney(portfolioValue)}</b><span>{owned.length} owned · {licensed.length} licensed</span></div>
+    </section>
 
-    <OriginalIPCreator world={world} createIP={createIP} />
+    <div className="ip-stat-ribbon">
+      <MiniStat icon="✦" label="Owned IP" value={String(owned.length)} />
+      <MiniStat icon="◉" label="Active licenses" value={String(licensed.length)} />
+      <MiniStat icon="♛" label="Owned IP value" value={fmtMoney(portfolioValue)} accent />
+      <MiniStat icon="↗" label="Royalty exposure / yr" value={fmtMoney(annualizedRoyaltyExposure(world))} />
+      <MiniStat icon="◆" label="Est. company value" value={fmtMoney(companyValue)} accent />
+    </div>
 
-    <Panel title="Your IP Portfolio">
+    <nav className="studio-tabs" aria-label="IP workspace" role="tablist">
+      <button type="button" role="tab" aria-selected={activeTab === "portfolio"} onClick={() => setActiveTab("portfolio")}><span>▦</span> My portfolio</button>
+      <button type="button" role="tab" aria-selected={activeTab === "create"} onClick={() => setActiveTab("create")}><span>✦</span> Create property</button>
+      <button type="button" role="tab" aria-selected={activeTab === "market"} onClick={() => setActiveTab("market")}><span>◎</span> Licensing market</button>
+    </nav>
+
+    {activeTab === "create" && <OriginalIPCreator world={world} createIP={createIP} />}
+
+    {activeTab === "portfolio" && <Panel title="Your IP Portfolio">
       {owned.length === 0 && licensed.length === 0 ? <Empty>No IP assets or licenses yet. Create an original property or license one from the market below.</Empty> : null}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
+      <div className="ip-card-grid">
         {owned.map((ip) => <IPCard key={ip.id} world={world} ip={ip} owned />)}
         {licensed.map((ip) => <IPCard key={ip.id} world={world} ip={ip} />)}
       </div>
-    </Panel>
+      {owned.length === 0 && licensed.length === 0 && <div className="empty-actions"><button onClick={() => setActiveTab("create")}>Create original IP</button><button onClick={() => setActiveTab("market")}>Browse licenses</button></div>}
+    </Panel>}
 
-    <Panel title="Licensing Market">
-      <div style={{ color: C.dim, fontSize: 12.5, lineHeight: 1.6, marginBottom: 12 }}>
+    {activeTab === "market" && <Panel title="Licensing Market">
+      <div className="studio-help">
         Licenses use standardized 2-, 3- or 5-year deals with an upfront minimum guarantee and a royalty on net licensed-product revenue. Strong properties can accelerate demand, but only when the audience and product fit.
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(290px,1fr))", gap: 12 }}>
+      <div className="ip-card-grid">
         {market.map((ip) => <LicenseOffer key={ip.id} world={world} ip={ip} onLicense={licenseIP} />)}
       </div>
-    </Panel>
+    </Panel>}
   </div>;
 }
 
@@ -88,7 +98,7 @@ function OriginalIPCreator({ world, createIP }: { world: World; createIP: (name:
     setMessage("Original IP created. Its value starts low; products, audience fit and commercial success must build it.");
   };
 
-  return <Panel title="✨ Create Original IP">
+  return <Panel title="Create Original IP"><div className="creator-intro"><span>ORIGINAL PROPERTY</span><strong>Your ideas, your upside.</strong><p>Pick an audience first, then license the property to product families that naturally fit their interests.</p></div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 18 }}>
       <div>
         <FieldLabel>Property name</FieldLabel>
@@ -98,18 +108,18 @@ function OriginalIPCreator({ world, createIP }: { world: World; createIP: (name:
         <SelectInput value={audience} onChange={setAudience}>
           {IP_AUDIENCE_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
         </SelectInput>
-        <div style={{ color: C.faint, fontSize: 10.5, lineHeight: 1.45, marginTop: 5 }}>{IP_AUDIENCE_PRESETS.find((p) => p.id === audience)?.description}</div>
-        <div style={{ marginTop: 12, padding: 10, border: `1px solid ${C.line}`, borderRadius: 8, background: C.panel2 }}>
-          <div style={{ color: C.dim, fontSize: 10.5 }}>Development investment</div>
+        <div className="studio-caption">{IP_AUDIENCE_PRESETS.find((p) => p.id === audience)?.description}</div>
+        <div className="investment-ticket">
+          <div>Development investment</div>
           <div style={{ fontWeight: 800, fontSize: 18, color: world.player.cash >= ORIGINAL_IP_CREATION_COST ? C.ink : C.red }}>{fmtMoney(ORIGINAL_IP_CREATION_COST)}</div>
-          <div style={{ color: C.faint, fontSize: 10.5 }}>Original IP starts with ~zero awareness and must earn its status.</div>
+          <small>Original IP starts unknown. Products and audience fit build its value.</small>
         </div>
       </div>
       <div>
         <FieldLabel>Compatible product families</FieldLabel>
-        <div style={{ color: C.faint, fontSize: 10.5, marginBottom: 8 }}>Choose the product families where this property has permission to appear. A broad IP can travel across industries; a narrow one may be much stronger in only a few categories.</div>
+        <div className="studio-help">Choose where this property may appear. A broad IP can travel across industries; a narrow one may be stronger in a few categories.</div>
         {Object.entries(grouped).map(([industryId, rows]) => <div key={industryId} style={{ marginBottom: 10 }}>
-          <div style={{ color: C.dim, fontSize: 10.5, textTransform: "uppercase", letterSpacing: .6, marginBottom: 5 }}>{INDUSTRIES[industryId]?.label ?? industryId}</div>
+          <div className="family-heading">{INDUSTRIES[industryId]?.label ?? industryId}</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {rows.map((f) => {
               const on = selected.includes(f.key);
@@ -131,10 +141,10 @@ function IPCard({ world, ip, owned = false }: { world: World; ip: IPAsset; owned
   const contract = activeIPContract(world, ip.id);
   const attached = world.player.skus.filter((sku) => sku.ipId === ip.id);
   const value = estimateIPValue(ip);
-  return <div style={{ border: `1px solid ${owned ? C.violet : C.line}`, background: C.panel2, borderRadius: 10, padding: 12 }}>
+  return <article className="ip-property-card" data-owned={owned || undefined}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
       <div><IPBadge ip={ip} /><div style={{ color: C.faint, fontSize: 10.5, marginTop: 4 }}>{owned ? `Owned by ${world.company}` : `Licensed from ${ip.ownerName}`}</div></div>
-      <span style={{ fontSize: 10, border: `1px solid ${owned ? C.violet : C.cyan}`, color: owned ? C.violet : C.cyan, borderRadius: 99, padding: "3px 7px", height: "fit-content" }}>{owned ? "OWNED" : "LICENSED"}</span>
+      <span className="ip-status-chip">{owned ? "OWNED" : "LICENSED"}</span>
     </div>
     <IPMetrics ip={ip} />
     <div style={{ color: C.dim, fontSize: 10.5, marginTop: 8 }}>Audience: <b style={{ color: C.ink }}>{ip.audienceLabel}</b></div>
@@ -146,7 +156,7 @@ function IPCard({ world, ip, owned = false }: { world: World; ip: IPAsset; owned
     </div>
     {owned && <div style={{ marginTop: 8, color: C.amber, fontSize: 11, fontWeight: 700 }}>Estimated IP asset value: {fmtMoney(value)}</div>}
     {contract && <div style={{ marginTop: 8, color: C.cyan, fontSize: 10.5 }}>{(contract.royaltyRate * 100).toFixed(1)}% royalty · {daysUntilIPExpiry(world, contract)} days left · royalties paid {fmtMoney(contract.royaltiesPaid)}</div>}
-  </div>;
+  </article>;
 }
 
 function LicenseOffer({ world, ip, onLicense }: { world: World; ip: IPAsset; onLicense: (ipId: string, years: number) => ActionResult }) {
@@ -160,10 +170,10 @@ function LicenseOffer({ world, ip, onLicense }: { world: World; ip: IPAsset; onL
     const result = onLicense(ip.id, years);
     setMessage(result.ok ? `${ip.name} licensed.` : result.reason ?? "Could not sign license.");
   };
-  return <div style={{ border: `1px solid ${active ? C.cyan : C.line}`, borderRadius: 10, padding: 13, background: active ? C.panel2 : C.panel }}>
+  return <article className="ip-property-card license-offer" data-active={Boolean(active) || undefined}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
       <div><IPBadge ip={ip} /><div style={{ color: C.faint, fontSize: 10.5, marginTop: 4 }}>{ip.ownerName} · {ip.audienceLabel}</div></div>
-      <span style={{ color: strength > .85 ? C.green : strength > .5 ? C.amber : C.faint, fontSize: 10.5, fontWeight: 700 }}>{strength > 1.05 ? "HOT" : strength > .72 ? "ESTABLISHED" : "NICHE"}</span>
+      <span className="heat-chip" data-heat={strength > 1.05 ? "hot" : strength > .72 ? "established" : "niche"}>{strength > 1.05 ? "HOT" : strength > .72 ? "ESTABLISHED" : "NICHE"}</span>
     </div>
     <IPMetrics ip={ip} />
     <div style={{ color: C.dim, fontSize: 10.5, lineHeight: 1.45, marginTop: 8 }}>Best fits: {familyLabels(ip.compatibleProductFamilies).slice(0, 8).join(" · ")}{ip.compatibleProductFamilies.length > 8 ? " · …" : ""}</div>
@@ -179,7 +189,7 @@ function LicenseOffer({ world, ip, onLicense }: { world: World; ip: IPAsset; onL
       {!commercialOwner ? <DisabledReason>Seat a Strategy or Marketing specialist to own the licensing negotiation.</DisabledReason> : world.player.cash < terms.minimumGuarantee && <DisabledReason>Minimum guarantee shortfall: {fmtMoney(terms.minimumGuarantee - world.player.cash)}.</DisabledReason>}
     </> : null}
     {message && <div style={{ color: message.endsWith("licensed.") ? C.green : C.amber, fontSize: 10.5, marginTop: 7 }}>{message}</div>}
-  </div>;
+  </article>;
 }
 
 function IPMetrics({ ip }: { ip: IPAsset }) {
@@ -199,8 +209,8 @@ function Meter({ label, value, text, danger = false }: { label: string; value: n
   </div>;
 }
 
-function MiniStat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
-  return <div style={{ border: `1px solid ${C.line}`, background: C.panel2, borderRadius: 9, padding: "9px 10px" }}><div style={{ color: C.faint, fontSize: 9.5 }}>{label}</div><div style={{ color: accent ? C.amber : C.ink, fontSize: 14, fontWeight: 800, marginTop: 2 }}>{value}</div></div>;
+function MiniStat({ icon, label, value, accent = false }: { icon: string; label: string; value: string; accent?: boolean }) {
+  return <div className="ip-mini-stat"><span aria-hidden="true">{icon}</span><div><small>{label}</small><strong className={accent ? "accent" : undefined}>{value}</strong></div></div>;
 }
 
 function Term({ label, value }: { label: string; value: string }) {

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "artDirection": "executive-playset",
+  "backgrounds": {
+    "mainMenu": "backgrounds/campus-main-menu.png",
+    "productStudio": "backgrounds/product-studio.png",
+    "marketCommand": "backgrounds/market-command.png"
+  },
+  "productActions": {
+    "produce": "actions/produce.png",
+    "campaign": "actions/campaign.png",
+    "marketStudy": "actions/market-study.png",
+    "newVersion": "actions/new-version.png"
+  }
+}

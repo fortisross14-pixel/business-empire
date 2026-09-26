@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import "./game-certification.css";
 import { C, ctrlBtn, bigBtn, fmtMoney, fmtPct, fmtNum } from "./theme";
 import { Panel, Slider, SelectInput } from "./components";
 import { CampaignSelect, Home, SandboxWizard, SetupWizard } from "./setup/Setup";
@@ -35,7 +36,7 @@ import { categoryExpansionSpeed } from "../engine/growth";
 import { industryEntrySpeed } from "../engine/businesses";
 import { distributionMetricsForSku } from "../engine/distribution";
 import { brandById } from "../engine/brands";
-import { BrandLogoMark } from "./visualIdentity";
+import { BrandLogoMark, ProductVisualCard } from "./visualIdentity";
 import { teamEffectiveness } from "../engine/people";
 import { scenarioProgress, SCENARIOS } from "../engine/gameplay";
 import { CAMPAIGN_CASE_BY_ID, campaignDaysRemaining, campaignMetricValue, campaignRequirementMet, campaignStars, formatCampaignValue } from "../engine/campaign";
@@ -116,7 +117,7 @@ function routeMeta(top: string, sub: string) {
 export function Game() {
   const g = useGame();
   const [overlay, setOverlay] = useState<Route | null>(null);
-  const [seenEvents, setSeenEvents] = useState(0);
+  const [notificationQueue, setNotificationQueue] = useState<MarketEvent[]>([]);
   const [creatorBaseId, setCreatorBaseId] = useState<string | null>(null);
   const [focusProductId, setFocusProductId] = useState<string | null>(null);
   type GameMoment = { type: "product"; value: ProductMoment } | { type: "competitive"; value: CompetitiveMoment };
@@ -128,7 +129,7 @@ export function Game() {
   // Start watching only after a world is loaded, so historical save events never replay.
   useEffect(() => {
     const world = g.world;
-    if (g.phase !== "play" || !world) { eventCursor.current = null; queuedMoments.current = []; return; }
+    if (g.phase !== "play" || !world) { eventCursor.current = null; queuedMoments.current = []; setNotificationQueue([]); return; }
     if (eventCursor.current == null) { eventCursor.current = world.events.length; return; }
     if (world.events.length <= eventCursor.current) return;
     const incoming = world.events.slice(eventCursor.current);
@@ -139,13 +140,16 @@ export function Game() {
       const competitive = competitiveMomentFromEvent(world, event);
       return competitive ? { type: "competitive", value: competitive } : null;
     }).filter((moment): moment is GameMoment => Boolean(moment));
-    if (!moments.length) return;
-    queuedMoments.current.push(...moments);
-    if (!gameMoment) {
-      const next = queuedMoments.current.shift() ?? null;
-      setGameMoment(next);
-      setSeenEvents(world.events.length);
-      g.setPlaying(false);
+    const momentEvents = new Set(moments.map((moment) => moment.value.event));
+    const notifications = incoming.filter((event) => !momentEvents.has(event));
+    if (notifications.length) setNotificationQueue((queue) => [...queue, ...notifications].slice(-30));
+    if (moments.length) {
+      queuedMoments.current.push(...moments);
+      if (!gameMoment) {
+        const next = queuedMoments.current.shift() ?? null;
+        setGameMoment(next);
+        g.setPlaying(false);
+      }
     }
   }, [g.phase, g.world, g.world?.events.length, g.setPlaying, gameMoment]);
 
@@ -174,7 +178,7 @@ export function Game() {
   const last = hist.at(-1) ?? ({} as any);
   const prev = hist[Math.max(0, hist.length - TICKS_PER_QUARTER)] ?? ({} as any);
   const shareDelta = (last.share || 0) - (prev.share || 0);
-  const newEvent = w.events.length > seenEvents ? w.events[w.events.length - 1] : null;
+  const newEvent = notificationQueue[0] ?? null;
   const day = (w.tick % DAYS_PER_MONTH) + 1;
   const month = Math.floor(w.tick / DAYS_PER_MONTH) % 12 + 1;
   const year = Math.floor(w.tick / (TICKS_PER_QUARTER * 4)) + 1;
@@ -196,10 +200,10 @@ export function Game() {
     if (overlay.top === "mgmt" && overlay.sub === "ip") return <IPView world={w} createIP={g.createIP} licenseIP={g.licenseIP} />;
     if (overlay.top === "ops" && overlay.sub === "products") return <ProductsView world={w} produce={g.produce} setProductPrice={g.setProductPrice} setProductQuality={g.setProductQuality} setProductionSetup={g.setProductionSetup} assignPartner={g.assignPartner} openContract={() => g.setModal("contract")} openCreator={openCreator} commissionStudy={(skuId) => g.commission("product_diagnosis", skuId)} releaseProduct={g.releaseProduct} retargetProduct={g.retargetProduct} discardProduct={g.discardProduct} setProductArchived={g.setProductArchived} openMarketing={() => navigate("mkt","campaigns")} openSegments={() => navigate("mkt","segments")} focusProductId={focusProductId} onFocusHandled={() => setFocusProductId(null)} />;
     if (overlay.top === "ops" && overlay.sub === "inventory") return <InventoryView world={w} openProduct={openProduct} />;
-    if (overlay.top === "ops" && overlay.sub === "distribution") return <DistributionPlaceholder world={w} openContract={() => g.setModal("contract")} removeContract={g.removeContract} openProduct={openProduct} />;
+    if (overlay.top === "ops" && overlay.sub === "distribution") return <DistributionView world={w} openContract={() => g.setModal("contract")} removeContract={g.removeContract} openProduct={openProduct} />;
     if (overlay.top === "fin" && overlay.sub === "overview") return <FinancialsView world={w} hist={hist} borrow={g.borrow} repay={g.repay} />;
     if (overlay.top === "fin" && overlay.sub === "capital") return <CapitalDeskView world={w} borrow={g.borrow} repay={g.repay} connectInvestor={g.connectInvestor} requestGrowthLoan={g.requestGrowthLoan} raiseCapital={g.raiseCapital} />;
-    if (overlay.top === "fin" && overlay.sub === "analysis") return <AnalysisPlaceholder world={w} />;
+    if (overlay.top === "fin" && overlay.sub === "analysis") return <FinancialAnalysisView world={w} openProduct={openProduct} />;
     if (overlay.top === "mkt" && overlay.sub === "customers") return <div><MarketView world={w} hist={hist} selectCell={g.selectCell} mode="overview" /><div style={{ marginTop: 14 }}><CustomersView world={w} /></div></div>;
     if (overlay.top === "mkt" && overlay.sub === "competitive") return <MarketView world={w} hist={hist} selectCell={g.selectCell} mode="competitive" />;
     if (overlay.top === "mkt" && overlay.sub === "segments") return <SegmentsView world={w} saveSegment={g.saveSegment} deleteSegment={g.deleteSegment} updateSegment={g.updateSegment} />;
@@ -220,7 +224,7 @@ export function Game() {
           <span><b>{w.company}</b><small>{Object.keys(w.player.businesses ?? {}).length > 1 ? `${Object.keys(w.player.businesses).length} businesses` : w.cfg.label}</small></span>
         </button>
         <div className="hud-metrics"><HudMetric icon="$" label="Cash" value={fmtMoney(w.player.cash)} tone={w.player.cash < 0 ? "bad" : "normal"} /><HudMetric icon="▲" label="Profit / Q" value={fmtMoney(w.live?.income.profit || 0)} tone={(w.live?.income.profit || 0) < 0 ? "bad" : "good"} /><HudMetric icon="▥" label="Revenue / Q" value={fmtMoney(w.live?.income.netRevenue || last.revenue || 0)} /><HudMetric icon="%" label="Share" value={fmtPct(last.share || 0)} detail={shareDelta ? `${shareDelta >= 0 ? "▲" : "▼"}${Math.abs(shareDelta * 100).toFixed(1)}` : undefined} /></div>
-        <div className="hud-controls">{w.mode === "campaign" && w.campaign && <button className="task-pill" onClick={() => setOverlay({top:"goals",sub:"goals"})}><span>🎓</span><b>{CAMPAIGN_CASE_BY_ID[w.campaign.caseId]?.name ?? "Campaign case"}</b><em>{campaignDaysRemaining(w)}d · {campaignStars(w)}/3★</em></button>}{leadTask && <button className="task-pill" onClick={() => navigate(leadTask.top, leadTask.sub)} title={workQueue.map((t) => `${t.label}: ${t.days == null ? "Paused" : `${t.days}d`}`).join(" · ")}><span>{leadTask.icon}</span><b>{leadTask.label}</b><em>{leadTask.days == null ? "Paused" : `${leadTask.days}d`}{workQueue.length > 1 ? ` · +${workQueue.length - 1}` : ""}</em></button>}{w.difficulty !== "bootstrap" && <span className={`confidence ${w.investorConfidence < .35 ? "low" : w.investorConfidence < .65 ? "mid" : "high"}`}>Backers {(w.investorConfidence * 100).toFixed(0)}%</span>}<span className="difficulty-pill">{w.mode === "campaign" ? "case" : w.mode ?? w.difficulty}</span><button onClick={() => g.setPlaying(!g.playing)} style={{ ...ctrlBtn, fontSize: 14, padding: "6px 11px" }}>{g.playing ? "❚❚" : "▶"}</button>{[1,2,4].map((s) => <button key={s} onClick={() => g.setSpeed(s)} style={{ ...ctrlBtn, background: g.speed === s ? C.violet : C.panel, color: g.speed === s ? "#fff" : C.dim, minWidth: 34, padding: "6px 8px", fontWeight: 700 }}>{s}×</button>)}<span className="game-date">Y{year} · M{month} · D{day}</span><button onClick={g.saveNow} style={{ ...ctrlBtn, padding: "6px 9px" }}>Save</button></div>
+        <div className="hud-controls"><div className="hud-task-stack">{w.mode === "campaign" && w.campaign && <button className="task-pill" onClick={() => setOverlay({top:"goals",sub:"goals"})}><span>🎓</span><b>{CAMPAIGN_CASE_BY_ID[w.campaign.caseId]?.name ?? "Campaign case"}</b><em>{campaignDaysRemaining(w)}d · {campaignStars(w)}/3★</em></button>}{leadTask && <button className="task-pill" onClick={() => navigate(leadTask.top, leadTask.sub)} title={workQueue.map((t) => `${t.label}: ${t.days == null ? "Paused" : `${t.days}d`}`).join(" · ")}><span>{leadTask.icon}</span><b>{leadTask.label}</b><em>{leadTask.days == null ? "Paused" : `${leadTask.days}d`}{workQueue.length > 1 ? ` · +${workQueue.length - 1}` : ""}</em></button>}</div>{w.difficulty !== "bootstrap" && <span className={`confidence ${w.investorConfidence < .35 ? "low" : w.investorConfidence < .65 ? "mid" : "high"}`}>Backers {(w.investorConfidence * 100).toFixed(0)}%</span>}<span className="difficulty-pill">{w.mode === "campaign" ? "case" : w.mode ?? w.difficulty}</span><button aria-label={g.playing ? "Pause simulation" : "Play simulation"} onClick={() => g.setPlaying(!g.playing)} style={{ ...ctrlBtn, fontSize: 14, padding: "6px 11px" }}>{g.playing ? "❚❚" : "▶"}</button>{[1,2,4].map((s) => <button aria-label={`Set speed to ${s} times`} key={s} onClick={() => g.setSpeed(s)} style={{ ...ctrlBtn, background: g.speed === s ? C.violet : C.panel, color: g.speed === s ? "#fff" : C.dim, minWidth: 34, padding: "6px 8px", fontWeight: 700 }}>{s}×</button>)}<span className="game-date">Y{year} · M{month} · D{day}</span><button onClick={g.saveNow} style={{ ...ctrlBtn, padding: "6px 9px" }}>Save</button></div>
       </header>
 
       <div className="campus-world"><CompanyMapView world={w} openCreator={() => openCreator()} updateRooms={g.updateOperatingRooms} buildRoom={g.buildOperatingRoom} buildPath={g.buildCampusPath} buildPathLine={g.buildCampusPathLine} moveRoom={g.moveOperatingRoom} demolishRoom={g.demolishOperatingRoom} upgradeRoom={g.upgradeOperatingRoom} retoolFactory={g.retoolFactory} installWarehouseModule={g.installWarehouseModule} onNavigate={navigate} /></div>
@@ -235,7 +239,7 @@ export function Game() {
         <RailButton icon="history" label="History" active={overlay?.top === "history"} onClick={() => navigate("history","chronicle")} />
       </nav>
 
-      {newEvent && <EventToast key={`${newEvent.tick}_${newEvent.text}`} event={newEvent} onDismiss={() => setSeenEvents(w.events.length)} />}
+      {newEvent && <EventToast key={`${newEvent.tick}_${newEvent.text}`} event={newEvent} queued={notificationQueue.length} onDismiss={() => setNotificationQueue((queue) => queue.slice(1))} />}
 
       {overlay && <div className="screen-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) closeOverlay(); }}>
         <section className="overlay-card">
@@ -278,16 +282,19 @@ function RailButton({ icon, label, active, onClick, badge }: { icon: GameIconNam
   return <button className={active ? "active" : ""} onClick={onClick}><GameIcon name={icon} size={30} compact active={active} /><small>{label}</small>{badge && badge !== "0" ? <i>{badge}</i> : null}</button>;
 }
 
-function EventToast({ event, onDismiss }: { event: MarketEvent; onDismiss: () => void }) {
+function EventToast({ event, onDismiss, queued = 1 }: { event: MarketEvent; onDismiss: () => void; queued?: number }) {
   const [closing, setClosing] = useState(false);
   const close = () => { if (closing) return; setClosing(true); window.setTimeout(onDismiss, 220); };
   useEffect(() => { const timer = window.setTimeout(close, event.code === "achievement_unlocked" ? 8200 : 6500); return () => window.clearTimeout(timer); }, []);
-  return <div className={`event-toast ${event.code === "achievement_unlocked" ? "achievement" : ""} ${closing ? "closing" : ""}`}><span className="event-toast-icon">{event.code === "achievement_unlocked" ? "🏆" : "⚡"}</span><span>{event.text}</span><button onClick={close}>✕</button></div>;
+  const eventCode = event.code ?? "";
+  const achievement = eventCode === "achievement_unlocked";
+  const icon = achievement ? "🏆" : eventCode.includes("research") ? "🔬" : eventCode.includes("product") ? "📦" : eventCode.includes("market") ? "📈" : "⚡";
+  return <div role="status" aria-live="polite" className={`event-toast ${achievement ? "achievement" : ""} ${closing ? "closing" : ""}`}><span className="event-toast-icon">{icon}</span><span className="event-toast-copy"><b>{achievement ? "Achievement unlocked" : "Company update"}</b><small>{event.text}</small></span>{queued > 1 && <em className="event-toast-queue">+{queued - 1}</em>}<button type="button" aria-label="Dismiss notification" onClick={close}>✕</button></div>;
 }
 
 function CampaignGoalsOverlay({ world, onSubmit }: { world: World; onSubmit: () => unknown }) {
   const runtime=world.campaign; if(!runtime) return null; const def=CAMPAIGN_CASE_BY_ID[runtime.caseId]; if(!def) return null; const currentStars=campaignStars(world);
-  return <div>
+  return <div className="campaign-goals">
     <div style={{background:"linear-gradient(135deg,#0d416c,#168de2)",color:"#fff",borderRadius:15,padding:18,marginBottom:13,boxShadow:"0 12px 28px rgba(16,89,139,.18)"}}><div style={{fontSize:10,fontWeight:900,letterSpacing:1.4,color:"#a8ddff"}}>BUSINESS SCHOOL CASE · {def.difficulty.toUpperCase()}</div><div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"start",marginTop:5}}><div><h2 style={{margin:"0 0 4px"}}>{def.icon} {def.name}</h2><div style={{fontSize:12,color:"#cce7f8"}}>{def.company} · {campaignDaysRemaining(world)} days remaining</div></div><div style={{fontSize:24,color:"#ffd166",whiteSpace:"nowrap"}}>{[1,2,3].map((star)=><span key={star}>{star<=currentStars?"★":"☆"}</span>)}</div></div><p style={{fontSize:12,lineHeight:1.55,color:"#dbeef9",margin:"12px 0 0"}}>{def.brief}</p></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:10}}>{def.stars.map((star)=>{const achieved=star.requirements.every((requirement)=>campaignRequirementMet(world,requirement));return <div key={star.stars} style={{background:achieved?"linear-gradient(180deg,#f1fff7,#e8f9f0)":"#fff",border:`1px solid ${achieved?"#8bd8ae":C.line}`,borderRadius:12,padding:13}}><div style={{display:"flex",justifyContent:"space-between",gap:8}}><b style={{color:achieved?C.green:C.ink}}>{"★".repeat(star.stars)} {star.title}</b><span style={{color:achieved?C.green:C.faint,fontWeight:900}}>{achieved?"DONE":"OPEN"}</span></div><div style={{marginTop:8,display:"grid",gap:7}}>{star.requirements.map((requirement,index)=>{const value=campaignMetricValue(world,requirement),met=campaignRequirementMet(world,requirement);return <div key={index} style={{fontSize:10.5,color:C.dim}}><div style={{display:"flex",justifyContent:"space-between",gap:8}}><span>{met?"✓":"○"} {requirement.label}</span><b style={{color:met?C.green:C.ink}}>{formatCampaignValue(requirement,value)}</b></div><div style={{height:4,borderRadius:99,background:C.grid,marginTop:4,overflow:"hidden"}}><div style={{width:`${Math.max(3,Math.min(100,requirement.operator==="<="?(value<=requirement.target?100:requirement.target/Math.max(1,value)*100):value/Math.max(.0001,requirement.target)*100))}%`,height:"100%",background:met?C.green:C.cyan}}/></div></div>})}</div></div>})}</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:12}}><Panel title="Case rules"><div style={{display:"grid",gap:6}}>{(def.constraints.notes??["No special restrictions."]).map((note)=><div key={note} style={{fontSize:11,color:C.dim}}>◆ {note}</div>)}</div></Panel><Panel title="What this case teaches"><div style={{fontSize:12,color:C.dim,lineHeight:1.6}}>{def.lesson}</div><div style={{fontSize:10.5,color:C.faint,marginTop:9}}>{runtime.scriptedEventsSeen.length}/{def.events.length} authored case events encountered</div></Panel></div>
@@ -297,7 +304,16 @@ function CampaignGoalsOverlay({ world, onSubmit }: { world: World; onSubmit: () 
 
 function CampaignResultModal({ world, onCareer }: { world: World; onCareer:()=>void }) {
   const runtime=world.campaign; if(!runtime) return null; const def=CAMPAIGN_CASE_BY_ID[runtime.caseId]; const stars=runtime.awardedStars;
-  return <div style={{position:"fixed",inset:0,zIndex:160,background:"rgba(8,29,47,.72)",backdropFilter:"blur(8px)",display:"grid",placeItems:"center",padding:18}}><div style={{width:"min(560px,96vw)",background:"linear-gradient(180deg,#fff,#f3f9fd)",border:"1px solid rgba(255,255,255,.7)",borderRadius:22,padding:26,boxShadow:"0 30px 90px rgba(0,0,0,.35)",textAlign:"center"}}><div style={{fontSize:44}}>{stars?"🎓":"📚"}</div><div style={{fontSize:11,color:C.cyan,fontWeight:900,letterSpacing:1.5,marginTop:7}}>CASE COMPLETE</div><h1 style={{color:C.ink,margin:"7px 0 3px"}}>{def?.name??runtime.caseId}</h1><div style={{fontSize:34,color:C.amber,letterSpacing:4,margin:"10px 0"}}>{[1,2,3].map((star)=><span key={star}>{star<=stars?"★":"☆"}</span>)}</div><p style={{color:C.dim,fontSize:13,lineHeight:1.6,margin:"0 auto 17px",maxWidth:450}}>{stars===3?"Outstanding. You solved the assignment and created a result that would stand up in the boardroom.":stars===2?"Strong result. The company is healthier and the strategic logic is working.":stars===1?"Assignment passed. You stabilized the essential business problem; the case remains replayable for a stronger result.":"The deadline arrived before the minimum assignment was met. Review the evidence and try a different set of decisions."}</p><div style={{background:"#eef8ff",border:"1px solid #cde9fa",borderRadius:11,padding:11,color:"#285a77",fontSize:11,lineHeight:1.5,marginBottom:17}}><b>Lesson:</b> {def?.lesson}</div><button style={{...bigBtn,width:"100%"}} onClick={onCareer}>Return to the campaign map →</button></div></div>;
+  const verdict = stars===3?"Boardroom distinction":stars===2?"Strong turnaround":stars===1?"Assignment passed":"Case requires another attempt";
+  const copy = stars===3?"Outstanding. You solved the assignment and created a result that would stand up in the boardroom.":stars===2?"Strong result. The company is healthier and the strategic logic is working.":stars===1?"You stabilized the essential business problem. Replay the case whenever you want to pursue a stronger result.":"The deadline arrived before the minimum assignment was met. Review the evidence and try a different set of decisions.";
+  return <div className="campaign-result-backdrop" role="dialog" aria-modal="true" aria-labelledby="campaign-result-title"><section className="campaign-result-card">
+    <div className="campaign-result-ribbon"><span>{stars?"🎓":"📚"}</span><div><small>BUSINESS SCHOOL CASE COMPLETE</small><b>{verdict}</b></div></div>
+    <div className="campaign-result-body"><p className="campaign-result-company">{def?.company ?? world.company}</p><h1 id="campaign-result-title">{def?.name??runtime.caseId}</h1><div className="campaign-result-stars" aria-label={`${stars} of 3 stars`}>{[1,2,3].map((star)=><span key={star} className={star<=stars?"earned":""}>{star<=stars?"★":"☆"}</span>)}</div><p>{copy}</p>
+      <div className="campaign-result-score"><div><small>AWARDED</small><b>{stars}/3 stars</b></div><div><small>CAREER RESULT</small><b>{stars ? "Recorded" : "Retry available"}</b></div></div>
+      <aside><b>What this case taught</b><span>{def?.lesson}</span></aside>
+      <button className="campaign-result-action" onClick={onCareer}>Return to campaign map <span>→</span></button>
+    </div>
+  </section></div>;
 }
 
 function GoalsOverlay({ world, onNavigate }: { world: any; onNavigate: (top: string, sub: string) => void }) {
@@ -318,31 +334,37 @@ function CompanyHub({ world, onNavigate }: { world: any; onNavigate: (top: strin
   const activeBusinesses = Object.values(world.player.businesses ?? {}).filter((b: any) => b?.status === "active").length;
   const activeProducts = world.player.skus.filter((s: any) => !s.archived && s.status === "active").length;
   const ownedIp = world.ipAssets.filter((ip: any) => ip.ownerType === "player").length;
+  const nextStep = founderJourney(world).find((step) => !step.done);
+  const profit = world.live?.income?.profit ?? 0;
+  const revenue = world.live?.income?.netRevenue ?? 0;
+  const inventory = world.player.skus.reduce((sum: number, sku: any) => sum + (sku.inventory ?? 0), 0);
+  const urgent = world.player.skus.filter((sku: any, index: number) => !sku.archived && sku.releasedToMarket && ((world.live?.skuResults?.[index]?.lostUnits ?? 0) > 1 || sku.inventory <= 0));
   const cards = [
-    { icon: "🗺", title: "Company Roadmap", text: "See the exact facilities, hires and capabilities behind each next-stage company ambition.", top: "mgmt", sub: "roadmap" },
-    { icon: "🔬", title: "Research & Capabilities", text: "Unlock larger product programs, offices, recruiting methods, sourcing and owned manufacturing.", top: "mgmt", sub: "research" },
-    { icon: "♟", title: "Strategy & Intelligence", text: "Choose direction and commission market studies that explain what went wrong or where opportunity sits.", top: "mgmt", sub: "strategy" },
-    { icon: "🏷", title: "Brands", text: "Position brands, create new ones and decide which categories they can credibly enter.", top: "mgmt", sub: "vision" },
-    { icon: "🧱", title: "Businesses", text: "See the operating portfolio by industry and manage expansion into new businesses.", top: "mgmt", sub: "businesses" },
-    { icon: "🎬", title: "IP & Licensing", text: "Build owned IP, sign licenses and deploy them where the audience and product actually fit.", top: "mgmt", sub: "ip" },
+    { icon: "⌁", title: "Company Roadmap", text: "See the people, facilities and capabilities behind the next growth step.", top: "mgmt", sub: "roadmap", tone: "#238bd0" },
+    { icon: "◈", title: "Research", text: "Build the capabilities required for better products and a larger company.", top: "mgmt", sub: "research", tone: "#785ce0" },
+    { icon: "◎", title: "Strategy", text: "Turn market evidence into a small number of deliberate choices.", top: "mgmt", sub: "strategy", tone: "#ef9d3b" },
+    { icon: "◆", title: "Brands", text: "Position each brand and decide how far its credibility can stretch.", top: "mgmt", sub: "vision", tone: "#eb5c91" },
+    { icon: "▦", title: "Businesses", text: "Compare industries and prepare the next expansion move.", top: "mgmt", sub: "businesses", tone: "#16a978" },
+    { icon: "✦", title: "IP & Licensing", text: "Create, license and deploy properties with real audience fit.", top: "mgmt", sub: "ip", tone: "#e8ad2e" },
   ];
   return <div>
-    <div className="hub-pulse">
-      <div><small>Businesses</small><b>{activeBusinesses}</b></div>
-      <div><small>Brands</small><b>{world.brands.length}</b></div>
-      <div><small>Active products</small><b>{activeProducts}</b></div>
-      <div><small>People</small><b>{world.player.personnel.length}</b></div>
-      <div><small>Owned IP</small><b>{ownedIp}</b></div>
+    <section className="hq-hero">
+      <div className="hq-hero-copy"><small>EXECUTIVE BRIEFING</small><h2>{world.company}</h2><p>{nextStep ? <><b>Recommended next move:</b> {nextStep.label}. {nextStep.detail}</> : "The founder roadmap is complete. Choose the next advantage to compound."}</p><div className="hq-hero-actions"><button onClick={() => nextStep ? onNavigate(nextStep.topTab,nextStep.subTab) : onNavigate("mgmt","strategy")}>{nextStep ? `Continue: ${nextStep.label}` : "Review strategy"} <span>→</span></button><button onClick={() => onNavigate("mgmt","personnel")}>Open People</button></div></div>
+      <div className="hq-score"><span>COMPANY RATING</span><b>{Math.max(1, Math.min(5, 2.4 + activeProducts * .18 + activeBusinesses * .2 + ownedIp * .08)).toFixed(1)}</b><em>{"★".repeat(Math.max(1, Math.round(Math.min(5, 2.4 + activeProducts * .18 + activeBusinesses * .2 + ownedIp * .08))))}</em></div>
+    </section>
+    <div className="hq-kpis">
+      <div><span className="kpi-icon cash">$</span><small>Total cash</small><b>{fmtMoney(world.player.cash)}</b><em>Available to deploy</em></div>
+      <div><span className="kpi-icon revenue">▥</span><small>Revenue / quarter</small><b>{fmtMoney(revenue)}</b><em>{activeProducts} active product{activeProducts === 1 ? "" : "s"}</em></div>
+      <div><span className="kpi-icon profit">▲</span><small>Profit / quarter</small><b className={profit < 0 ? "negative" : "positive"}>{fmtMoney(profit)}</b><em>{profit < 0 ? "Needs attention" : "Operating result"}</em></div>
+      <div><span className="kpi-icon people">●</span><small>Organization</small><b>{world.player.personnel.length} people</b><em>{activeBusinesses} business{activeBusinesses === 1 ? "" : "es"} · {world.brands.length} brand{world.brands.length === 1 ? "" : "s"}</em></div>
+      <div><span className="kpi-icon stock">▣</span><small>Inventory</small><b>{fmtNum(inventory)}</b><em>{urgent.length ? `${urgent.length} stock warning${urgent.length === 1 ? "" : "s"}` : "Supply stable"}</em></div>
     </div>
-    <Panel title="Run the company, not the spreadsheet">
-      <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.65, maxWidth: 820 }}>HQ is for decisions that change what the company is. Day-to-day work is reached from the campus itself or the compact control rail.</div>
-    </Panel>
+    {(urgent.length > 0 || profit < 0) && <section className="hq-alert"><span>!</span><div><b>{urgent.length ? "Products are losing sales to stock pressure" : "The company is currently unprofitable"}</b><p>{urgent.length ? `${urgent.slice(0,2).map((sku:any)=>sku.name).join(" and ")} need an inventory decision.` : "Review product contribution and spending before committing more capital."}</p></div><button onClick={() => onNavigate(urgent.length ? "ops" : "fin",urgent.length ? "inventory" : "analysis")}>Investigate →</button></section>}
     <div className="hub-cards">
-      {cards.map((c) => <button key={c.sub} onClick={() => onNavigate(c.top, c.sub)}><span>{c.icon}</span><div><b>{c.title}</b><p>{c.text}</p></div><i>→</i></button>)}
+      {cards.map((c) => <button key={c.sub} style={{ "--hub-tone": c.tone } as React.CSSProperties} onClick={() => onNavigate(c.top, c.sub)}><span>{c.icon}</span><div><b>{c.title}</b><p>{c.text}</p></div><i>→</i></button>)}
     </div>
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
-      <button style={ctrlBtn} onClick={() => onNavigate("mgmt", "personnel")}>👥 Open People</button>
-      <button style={ctrlBtn} onClick={() => onNavigate("history", "chronicle")}>📖 Open Company History</button>
+      <button style={ctrlBtn} onClick={() => onNavigate("history", "chronicle")}>Open Company History</button>
     </div>
   </div>;
 }
@@ -375,21 +397,26 @@ function InventoryView({ world, openProduct }: { world: any; openProduct: (produ
   const warehouses = world.player.operatingRooms.filter((r: any) => r.kind === "warehouse");
   const active = world.player.skus.filter((s: any) => !s.archived && (s.status === "active" || s.status === "manufacturing" || s.status === "designed"));
 
-  return <div>
-    <Panel title="📦 Warehouse Network">
-      <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.6 }}>This is the supply overview. Product-specific manufacturing and reorders live inside the product itself, so there is only one place where you change a SKU.</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 8, marginTop: 12 }}>
-        <div style={summaryTile}><small>Total capacity</small><b>{fmtNum(capacity)} units</b></div>
-        <div style={summaryTile}><small>Used / reserved</small><b>{fmtNum(used)} units</b></div>
-        <div style={summaryTile}><small>Free space</small><b style={{ color: capacity-used < capacity*.15 ? C.amber : C.green }}>{fmtNum(Math.max(0,capacity-used))}</b></div>
-        <div style={summaryTile}><small>Facilities</small><b>{warehouses.length}</b></div>
-      </div>
-      <div style={{ height: 8, background: C.grid, borderRadius: 4, marginTop: 10 }}><div style={{ width: `${utilization * 100}%`, height: "100%", background: utilization > .9 ? C.red : utilization > .75 ? C.amber : C.green, borderRadius: 4 }} /></div>
-      <div style={{ color: C.faint, fontSize: 10.5, marginTop: 5 }}>Inbound batches reserve warehouse space immediately.</div>
-    </Panel>
+  const status = utilization > .9 ? { label: "Capacity critical", tone: C.red, note: "Free space is almost exhausted." } : utilization > .75 ? { label: "Plan the next move", tone: C.amber, note: "The network is filling up." } : { label: "Network healthy", tone: C.green, note: "There is room for the next production run." };
+  return <div className="inventory-command">
+    <section className="inventory-hero">
+      <div><small>WAREHOUSE COMMAND</small><h2>{status.label}</h2><p>{status.note} Inbound batches reserve capacity immediately, so the number below includes stock that is still travelling.</p></div>
+      <div className="capacity-gauge" style={{ "--gauge": status.tone, "--fill": `${Math.round(utilization*100)}%` } as React.CSSProperties}><div><b>{Math.round(utilization*100)}%</b><span>utilized</span></div></div>
+    </section>
+    <div className="inventory-kpis">
+      <div><small>Total capacity</small><b>{fmtNum(capacity)}</b><span>units</span></div>
+      <div><small>Used + reserved</small><b>{fmtNum(used)}</b><span>units</span></div>
+      <div><small>Free space</small><b style={{ color: status.tone }}>{fmtNum(Math.max(0,capacity-used))}</b><span>units</span></div>
+      <div><small>Facilities</small><b>{warehouses.length}</b><span>in the network</span></div>
+    </div>
+    <section className="warehouse-strip">
+      <div className="operating-heading"><div><small>NETWORK</small><h3>Your storage facilities</h3></div><span>{warehouses.length ? "Live capacity" : "No warehouse built"}</span></div>
+      <div className="warehouse-cards">{warehouses.length ? warehouses.map((room:any) => <article key={room.id}><span>▦</span><div><b>{room.name}</b><small>{fmtNum(room.capacity)} unit capacity · Level {room.level ?? 1}</small></div></article>) : <article className="empty"><span>＋</span><div><b>Build a warehouse from the campus</b><small>Products cannot hold inventory until storage exists.</small></div></article>}</div>
+    </section>
 
-    <Panel title="Supply by Product">
-      {active.length === 0 ? <div style={{ color: C.faint, fontSize: 13 }}>No designed products yet.</div> : active.map((sku: any) => {
+    <section className="operating-panel">
+      <div className="operating-heading"><div><small>PRODUCT SUPPLY</small><h3>What needs an inventory decision?</h3></div><span>{active.length} current products</span></div>
+      {active.length === 0 ? <div className="operating-empty"><img src="/assets/ui/actions/produce.png" alt=""/><b>No designed products yet</b><span>Design a product and its supply status will appear here.</span></div> : <div className="inventory-product-grid">{active.map((sku: any) => {
         const si = world.player.skus.indexOf(sku);
         const r = world.live?.skuResults?.[si];
         const salesQ = r?.units ?? 0;
@@ -398,74 +425,63 @@ function InventoryView({ world, openProduct }: { world: any; openProduct: (produ
         const daysCover = salesDay > 0 ? (sku.inventory + inbound) / salesDay : 999;
         const lostQ = r?.lostUnits ?? 0;
         const stockColor = lostQ > 1 || daysCover < 20 ? C.red : daysCover < 45 ? C.amber : C.green;
-        return <button className="inventory-product-row" key={sku.id} onClick={() => openProduct(sku.id)} style={{ width: "100%", border: 0, borderTop: `1px solid ${C.grid}`, background: "transparent", padding: "11px 0", display: "grid", gridTemplateColumns: "minmax(160px,1.2fr) repeat(4,minmax(90px,.7fr)) auto", gap: 10, alignItems: "center", fontSize: 11.5, textAlign: "left", cursor: "pointer", color: C.ink }}>
-          <div><div style={{ fontWeight: 800 }}>{sku.name}</div><div style={{ color: C.faint, marginTop: 2 }}>{sku.status}{inbound > 0 ? ` · ${fmtNum(inbound)} inbound` : ""}</div></div>
-          <div><div style={{ color: C.faint }}>On hand</div><b>{fmtNum(sku.inventory)}</b></div>
-          <div><div style={{ color: C.faint }}>Sales / day</div><b>{salesDay > 0 ? salesDay.toFixed(salesDay < 10 ? 1 : 0) : "—"}</b></div>
-          <div><div style={{ color: C.faint }}>Cover</div><b style={{ color: stockColor }}>{daysCover >= 365 ? "365+ d" : `${Math.round(daysCover)} d`}</b></div>
-          <div><div style={{ color: C.faint }}>Lost / Q</div><b style={{ color: lostQ > 1 ? C.red : C.dim }}>{fmtNum(lostQ)}</b></div>
-          <span style={{ color: C.violet, fontWeight: 800 }}>Open product →</span>
+        const label = lostQ > 1 ? "Losing sales" : inbound > 0 ? "Batch inbound" : daysCover < 20 ? "Reorder now" : daysCover < 45 ? "Watch supply" : "Supply healthy";
+        return <button className="inventory-product-card" key={sku.id} onClick={() => openProduct(sku.id)} style={{ "--stock-tone": stockColor } as React.CSSProperties}>
+          <div className="inventory-product-art"><ProductVisualCard world={world} sku={sku} size={104} showLabels={false}/></div>
+          <div className="inventory-product-copy"><span className="inventory-status">{label}</span><h4>{sku.name}</h4><p>{sku.status}{inbound > 0 ? ` · ${fmtNum(inbound)} units inbound` : ""}</p><div className="inventory-card-metrics"><span><small>On hand</small><b>{fmtNum(sku.inventory)}</b></span><span><small>Sales / day</small><b>{salesDay > 0 ? salesDay.toFixed(salesDay < 10 ? 1 : 0) : "—"}</b></span><span><small>Cover</small><b style={{color:stockColor}}>{daysCover >= 365 ? "365+ d" : `${Math.round(daysCover)} d`}</b></span><span><small>Lost / Q</small><b>{fmtNum(lostQ)}</b></span></div><strong>Open product <i>→</i></strong></div>
         </button>;
-      })}
-    </Panel>
+      })}</div>}
+    </section>
   </div>;
 }
 
-const summaryTile: React.CSSProperties = { background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, padding: 10, display: "grid", gap: 3 };
-
-function DistributionPlaceholder({ world, openContract, removeContract, openProduct }: { world: any; openContract: () => void; removeContract: (i: number) => void; openProduct: (productId: string) => void }) {
+function DistributionView({ world, openContract, removeContract, openProduct }: { world: any; openContract: () => void; removeContract: (i: number) => void; openProduct: (productId: string) => void }) {
+  const [confirmEnd, setConfirmEnd] = useState<number | null>(null);
+  const routedProducts = world.player.skus.filter((sku:any) => !sku.archived && (sku.releasedToMarket || sku.status === "active"));
   return (
-    <div>
-      <Panel title="🤝 Distribution Network">
-        <div style={{ color: C.dim, fontSize: 13, marginBottom: 12 }}>This screen manages retailer relationships. Which retailers carry a specific SKU is changed inside that product's Sell / Analyze stage.</div>
+    <div className="distribution-command">
+      <section className="distribution-hero"><div><small>CHANNEL NETWORK</small><h2>Put each product where its customer shops</h2><p>Negotiate company relationships here. Assign the resulting channels to exact products inside their Operations workspace.</p></div><button onClick={openContract}><img src="/assets/ui/actions/campaign.png" alt=""/><span><b>Negotiate retailer</b><small>Compare reach, cut and payment terms</small></span><i>→</i></button></section>
+      <section className="operating-panel">
+        <div className="operating-heading"><div><small>RETAILER RELATIONSHIPS</small><h3>Your distribution partners</h3></div><span>{world.player.contracts.length} active</span></div>
         {world.player.contracts.length === 0 ? (
-          <div style={{ color: C.faint, fontSize: 13, marginBottom: 12 }}>No distribution contracts yet.</div>
-        ) : <div style={{ display: "grid", gap: 7 }}>{world.player.contracts.map((c: any, i: number) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "9px 10px", border: `1px solid ${C.line}`, background: C.panel2, borderRadius: 9, fontSize: 12, alignItems: "center" }}>
-            <div><b style={{ color: C.ink }}>{c.partnerName || c.type}</b><div style={{ color: C.faint, fontSize: 10.5, marginTop: 2 }}>{(c.marginCut * 100).toFixed(0)}% retailer cut · pays in {c.paymentDays ?? 60}d</div></div>
-            <button style={ctrlBtn} onClick={() => removeContract(i)}>End contract</button>
-          </div>
-        ))}</div>}
-        <button style={{ ...ctrlBtn, marginTop: 12, width: "100%" }} onClick={openContract}>+ Negotiate new retailer</button>
-      </Panel>
+          <div className="operating-empty"><img src="/assets/ui/actions/campaign.png" alt=""/><b>No retailer relationships yet</b><span>Negotiate a partner before assigning channels to products.</span><button onClick={openContract}>Find a retailer</button></div>
+        ) : <div className="partner-card-grid">{world.player.contracts.map((c: any, i: number) => {
+          const assigned = world.player.skus.filter((sku:any) => (sku.assignedPartnerIds ?? []).includes(c.partnerId)).length;
+          return <article key={i} className="partner-card"><div className="partner-mark">{(c.partnerName || c.type || "R").slice(0,1).toUpperCase()}</div><div className="partner-card-copy"><span>ACTIVE PARTNER</span><h4>{c.partnerName || c.type}</h4><div className="partner-metrics"><b>{(c.marginCut * 100).toFixed(0)}%<small>retailer cut</small></b><b>{c.paymentDays ?? 60}d<small>payment terms</small></b><b>{assigned}<small>products listed</small></b></div></div><button className="partner-more" aria-label={`End ${c.partnerName || c.type} contract`} onClick={() => setConfirmEnd(i)}>•••</button></article>;
+        })}</div>}
+      </section>
 
-      {world.player.skus.some((sku: any) => !sku.archived) && <Panel title="Routes to market by product">
-        <div style={{ color: C.faint, fontSize: 11, marginBottom: 9 }}>Read-only overview. Open a product to change its channels.</div>
-        {world.player.skus.filter((sku: any) => !sku.archived).map((sku: any) => {
+      {world.player.skus.some((sku: any) => !sku.archived) && <section className="operating-panel">
+        <div className="operating-heading"><div><small>PRODUCT ROUTES</small><h3>Where each product is sold</h3></div><span>Open a product to change its channels</span></div>
+        <div className="route-card-grid">{world.player.skus.filter((sku: any) => !sku.archived).map((sku: any) => {
           const partners = world.player.contracts.filter((c: any) => (sku.assignedPartnerIds ?? []).includes(c.partnerId));
-          return <button key={sku.id} onClick={() => openProduct(sku.id)} style={{ width: "100%", border: 0, borderTop: `1px solid ${C.grid}`, background: "transparent", padding: "9px 0", display: "flex", justifyContent: "space-between", gap: 12, textAlign: "left", cursor: "pointer", color: C.ink }}><span><b>{sku.name}</b><span style={{ color: C.faint, fontSize: 10.5, marginLeft: 8 }}>{partners.map((p:any)=>p.partnerName).join(" · ") || "No retailer assigned"}</span></span><span style={{ color: C.violet, fontSize: 10.5, fontWeight: 800 }}>Open →</span></button>;
-        })}
-      </Panel>}
+          const mix = distributionMetricsForSku(world, sku);
+          return <button className="route-card" key={sku.id} onClick={() => openProduct(sku.id)}><ProductVisualCard world={world} sku={sku} size={76} showLabels={false}/><span><b>{sku.name}</b><small>{partners.map((p:any)=>p.partnerName).join(" · ") || "No retailer assigned"}</small><em>{partners.length ? `${Math.round(mix.reach*100)}% effective reach · ${Math.round(mix.marginCut*100)}% blended cut` : "Channel decision required"}</em></span><i>→</i></button>;
+        })}</div>
+      </section>}
+      {confirmEnd != null && <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-label="End retailer contract"><div className="confirm-card"><span className="confirm-icon">!</span><h3>End the contract with {world.player.contracts[confirmEnd]?.partnerName || world.player.contracts[confirmEnd]?.type}?</h3><p>Products using this retailer will immediately lose that route to market. Their sales may fall until you assign another channel.</p><div><button onClick={() => setConfirmEnd(null)}>Keep relationship</button><button className="danger" onClick={() => { removeContract(confirmEnd); setConfirmEnd(null); }}>End contract</button></div></div></div>}
     </div>
   );
 }
 
-function AnalysisPlaceholder({ world }: { world: any }) {
+function FinancialAnalysisView({ world, openProduct }: { world: any; openProduct: (productId:string) => void }) {
   const live = world.live;
+  const rows = world.player.skus.map((sku:any,index:number) => ({ sku, result: live?.skuResults?.[index] })).sort((a:any,b:any) => (b.result?.margin ?? b.sku.contributionTotal ?? 0) - (a.result?.margin ?? a.sku.contributionTotal ?? 0));
+  const revenue = rows.reduce((sum:number,row:any) => sum + (row.result?.revenue ?? 0), 0);
+  const contribution = rows.reduce((sum:number,row:any) => sum + (row.result?.margin ?? 0), 0);
+  const top = rows[0];
+  const weak = [...rows].reverse().find((row:any) => (row.result?.margin ?? 0) < 0);
   return (
-    <Panel title="📈 Analysis — by Brand & Product">
-      {!live ? <div style={{ color: C.faint }}>No data yet.</div> : (
-        <div className="data-table-scroll">
-          <table style={{ width: "100%", minWidth: 680, borderCollapse: "collapse", fontSize: 12 }}>
-            <thead><tr style={{ color: C.faint, textAlign: "right" }}><th style={{ textAlign: "left", padding: "6px 4px" }}>Product</th><th style={{ textAlign: "left" }}>Brand</th><th>Status</th><th>Inventory</th><th>Units Sold</th><th>Contribution</th></tr></thead>
-            <tbody style={{ fontFamily: "ui-monospace" }}>
-              {world.player.skus.map((s: any, i: number) => {
-                return (
-                  <tr key={i} style={{ borderTop: `1px solid ${C.grid}`, textAlign: "right" }}>
-                    <td style={{ textAlign: "left", color: C.ink, padding: "8px 4px" }}>{s.name}</td>
-                    <td style={{ textAlign: "left", color: brandById(world, s.brandId).color, fontWeight: 700 }}>{brandById(world, s.brandId).name}</td>
-                    <td style={{ color: s.archived ? C.faint : s.status === "active" ? C.green : s.status === "designing" ? C.amber : C.dim, fontSize: 11 }}>{s.archived ? "archived" : s.status}</td>
-                    <td style={{ color: C.dim }}>{Math.round(s.inventory).toLocaleString()}</td>
-                    <td style={{ color: C.ink }}>{Math.round(s.unitsSoldTotal).toLocaleString()}</td>
-                    <td style={{ color: (s.contributionTotal ?? 0) >= 0 ? C.green : C.red }}>{fmtMoney(s.contributionTotal ?? 0)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Panel>
+    <div className="analysis-command">
+      <section className="analysis-hero"><div><small>PRODUCT ECONOMICS</small><h2>{weak ? `${weak.sku.name} needs a decision` : top ? `${top.sku.name} is leading the portfolio` : "Build the first commercial signal"}</h2><p>{weak ? "Negative contribution means each additional sale currently destroys value. Open the product to inspect price, channel cut, unit cost and positioning." : "Compare products by contribution, not only by revenue. A popular product can still be a poor business."}</p></div><div className="analysis-hero-score"><span>PORTFOLIO CONTRIBUTION</span><b className={contribution < 0 ? "negative" : "positive"}>{fmtMoney(contribution)}</b><small>{fmtMoney(revenue)} net revenue / quarter</small></div></section>
+      {!live || !rows.length ? <section className="operating-panel"><div className="operating-empty"><img src="/assets/ui/actions/market-study.png" alt=""/><b>No commercial data yet</b><span>Launch a product and this screen will turn sales into decisions.</span></div></section> : <>
+        <div className="analysis-kpis"><div><small>Net revenue / Q</small><b>{fmtMoney(revenue)}</b></div><div><small>Contribution / Q</small><b className={contribution < 0 ? "negative" : "positive"}>{fmtMoney(contribution)}</b></div><div><small>Products measured</small><b>{rows.length}</b></div><div><small>Profitable products</small><b>{rows.filter((row:any)=>(row.result?.margin ?? 0)>0).length}</b></div></div>
+        <section className="operating-panel"><div className="operating-heading"><div><small>PORTFOLIO RANKING</small><h3>Which products create value?</h3></div><span>Current quarter run-rate</span></div><div className="analysis-product-grid">{rows.map(({sku,result}:any) => {
+          const margin = result?.margin ?? 0; const units = result?.units ?? 0; const netRevenue = result?.revenue ?? 0; const rate = netRevenue > 0 ? margin/netRevenue : 0;
+          return <button key={sku.id} className="analysis-product-card" onClick={() => openProduct(sku.id)}><ProductVisualCard world={world} sku={sku} size={92} showLabels={false}/><div><span style={{color:brandById(world,sku.brandId).color}}>{brandById(world,sku.brandId).name} · V{sku.version ?? 1}</span><h4>{sku.name}</h4><div className="analysis-row"><b>{fmtMoney(netRevenue)}<small>net revenue / Q</small></b><b>{fmtNum(units)}<small>units / Q</small></b><b className={margin < 0 ? "negative" : "positive"}>{fmtMoney(margin)}<small>contribution / Q</small></b><b className={rate < 0 ? "negative" : ""}>{(rate*100).toFixed(0)}%<small>contribution margin</small></b></div><em>{margin < 0 ? "Economics need intervention" : units <= 0 ? "Waiting for sales" : "Creating positive contribution"} <i>Open product →</i></em></div></button>;
+        })}</div></section>
+      </>}
+    </div>
   );
 }
 
@@ -493,20 +509,19 @@ function CampaignsView({ world, launchCampaign, openSegments, setMarketing, setB
     return { a, fit, rel, score: fit * a.effectivenessMult * (1 + rel * .05) };
   }).sort((x: any, y: any) => y.score - x.score);
   return (
-    <div>
+    <div className="campaign-command">
+      <section className="campaign-hero"><div><small>GROWTH STUDIO</small><h2>Turn a specific audience into demand</h2><p>Choose who should care, what you are promoting and the media partner most capable of reaching them. The forecast updates before you spend.</p></div><img src="/assets/ui/actions/campaign.png" alt=""/></section>
       {world.activeCampaigns?.length > 0 && (
-        <Panel title="Active Campaigns">
+        <section className="operating-panel"><div className="operating-heading"><div><small>LIVE CAMPAIGNS</small><h3>Currently in market</h3></div><span>{world.activeCampaigns.length} running</span></div><div className="active-campaign-grid">
           {world.activeCampaigns.map((c: any) => {
             const target = world.savedSegments.find((s: any) => s.id === c.segmentId)?.name ?? "Audience";
-            return <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, padding: "7px 0", borderBottom: `1px solid ${C.grid}` }}>
-              <span style={{ color: C.ink }}><b>{c.name}</b><span style={{ color: C.faint }}> · {target}</span></span>
-              <span style={{ color: C.cyan, fontFamily: "ui-monospace" }}>{c.daysRemaining}d left · {fmtMoney(c.budget)}</span>
-            </div>;
+            const totalDays = c.durationDays ?? Math.max(c.daysRemaining,30); const progress = Math.max(0,Math.min(100,(1-c.daysRemaining/Math.max(1,totalDays))*100));
+            return <article key={c.id}><span className="active-campaign-icon">↗</span><div><b>{c.name}</b><small>{target} · {c.daysRemaining} days left</small><em><i style={{width:`${progress}%`}}/></em></div><strong>{fmtMoney(c.budget)}</strong></article>;
           })}
-        </Panel>
+        </div></section>
       )}
 
-      <Panel title="Launch a Campaign">
+      <section className="operating-panel campaign-builder"><div className="operating-heading"><div><small>CAMPAIGN BUILDER</small><h3>Build the commercial plan</h3></div><span>4 decisions</span></div>
         <div style={{ color: C.dim, fontSize: 12, lineHeight: 1.55, marginBottom: 14 }}>Choose the audience first. The game then tells you which agency/media approach fits that audience instead of asking you to guess from vague copy.</div>
         {!hasMarketingTeam && <div style={{marginBottom:12,padding:9,border:"1px solid #fed7aa",background:"#fff7ed",borderRadius:8,color:C.amber,fontSize:10.5,fontWeight:700}}>! Marketing is locked until a Marketing specialist is seated in an office.</div>}
 
@@ -526,11 +541,11 @@ function CampaignsView({ world, launchCampaign, openSegments, setMarketing, setB
           {!selectedSeg ? <div style={{ color: C.faint, fontSize: 12 }}>Choose a target audience first.</div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))", gap: 8 }}>
             {rankedAgencies.map(({a, fit, rel}: any) => {
               const on = campAgency === a.id; const stars = agencyFitStars(fit); const fitLabel = agencyFitLabel(fit);
-              return <button key={a.id} onClick={() => setCampAgency(a.id)} style={{ textAlign: "left", background: on ? "#f2fbff" : C.bg, border: `1px solid ${on ? C.cyan : C.line}`, borderRadius: 10, padding: 12, cursor: "pointer", color: C.ink }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 7 }}><b style={{ fontSize: 12.5 }}>{a.name}</b><span style={{ color: stars >= 4 ? C.green : stars <= 2 ? C.red : C.amber, fontSize: 10, fontWeight: 900 }}>{"★".repeat(stars)}{"☆".repeat(5-stars)}</span></div>
+              return <button className="agency-card" aria-pressed={on} key={a.id} onClick={() => setCampAgency(a.id)} style={{ textAlign: "left", background: on ? "#f2fbff" : C.bg, border: `1px solid ${on ? C.cyan : C.line}`, borderRadius: 10, padding: 12, cursor: "pointer", color: C.ink }}>
+                <span className="agency-mark">{a.name.slice(0,2).toUpperCase()}</span><div><div style={{ display: "flex", justifyContent: "space-between", gap: 7 }}><b style={{ fontSize: 14 }}>{a.name}</b><span style={{ color: stars >= 4 ? C.green : stars <= 2 ? C.red : C.amber, fontSize: 12, fontWeight: 900 }}>{"★".repeat(stars)}{"☆".repeat(5-stars)}</span></div>
                 <div style={{ color: C.dim, fontSize: 10.5, marginTop: 3 }}>{a.specialization}</div>
                 <div style={{ color: stars >= 4 ? C.green : stars <= 2 ? C.red : C.amber, fontSize: 10, fontWeight: 800, marginTop: 5 }}>{fitLabel}</div>
-                <div style={{ color: C.faint, fontSize: 9.5, marginTop: 5 }}>Cost ×{a.baseCostMult.toFixed(1)} · execution ×{a.effectivenessMult.toFixed(1)} · relationship {rel}</div>
+                <div style={{ color: C.faint, fontSize: 9.5, marginTop: 5 }}>Cost ×{a.baseCostMult.toFixed(1)} · execution ×{a.effectivenessMult.toFixed(1)} · relationship {rel}</div></div>
               </button>;
             })}
           </div>}
@@ -544,16 +559,16 @@ function CampaignsView({ world, launchCampaign, openSegments, setMarketing, setB
 
         <button title={!hasMarketingTeam ? "Seat a Marketing specialist first." : !campSeg ? "Choose a target audience first." : !campAgency ? "Choose a media/agency partner first." : !affordable ? `Need ${fmtMoney(Math.max(0, effectiveCost - world.player.cash))} more cash.` : undefined} style={{ ...bigBtn, width: "100%", marginTop: 12, opacity: hasMarketingTeam && campSeg && campAgency && affordable ? 1 : 0.5 }} disabled={!hasMarketingTeam || !campSeg || !campAgency || !affordable} onClick={() => launchCampaign(`${agency?.name ?? "?"} → ${scopeLabel} → ${segName ?? "all"}`, campSeg, campAgency, campBudget, campDays, campScope)}>Launch campaign</button>
         {(!hasMarketingTeam || !campSeg || !campAgency || !affordable) && <div style={{ color: C.amber, fontSize: 10, marginTop: 5 }}>↳ {!hasMarketingTeam ? "Hire and seat a Marketing specialist." : !campSeg ? "Choose a target audience." : !campAgency ? "Choose a media / agency partner." : `Campaign cash shortfall: ${fmtMoney(Math.max(0, effectiveCost - world.player.cash))}.`}</div>}
-      </Panel>
+      </section>
 
-      <Panel title="Always-on marketing">
+      <section className="operating-panel"><div className="operating-heading"><div><small>ALWAYS-ON MARKETING</small><h3>Maintain demand between launches</h3></div><span>Optional quarterly spend</span></div>
         <div style={{ color: C.dim, fontSize: 11.5, lineHeight: 1.5, marginBottom: 10 }}>Optional background spend between campaigns. Audience and spend are managed here so Segments stays purely about defining customer groups.</div>
         <div style={{ marginBottom: 11 }}><div style={campaignStepTitle}>ALWAYS-ON TARGET</div><div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}><button onClick={() => setFocus("all")} style={{ ...ctrlBtn, background: world.player.marketingFocus === "all" ? C.cyan : C.panel2, color: world.player.marketingFocus === "all" ? "#fff" : C.dim }}>All customers</button>{segs.map((s: any) => { const key = `seg:${s.id}`; const on = world.player.marketingFocus === key; return <button key={s.id} onClick={() => setFocus(key)} style={{ ...ctrlBtn, background: on ? C.cyan : C.panel2, color: on ? "#fff" : C.dim }}>{s.name}</button>; })}<button style={{ ...ctrlBtn }} onClick={openSegments}>＋ Audience</button></div></div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12 }}>
           <AlwaysOnPresets label="Performance / Q" value={world.player.marketingTarget} onChange={setMarketing} disabled={!hasMarketingTeam} />
           <AlwaysOnPresets label="Brand / Q" value={world.player.brandMarketingTarget} onChange={setBrandMarketing} disabled={!hasMarketingTeam} />
         </div>
-      </Panel>
+      </section>
     </div>
   );
 }
@@ -641,6 +656,17 @@ function Shell({ children }: { children: React.ReactNode }) {
         }
         @media(max-width:390px){.company-mark small{display:none!important}.game-hud{grid-template-columns:minmax(92px,1fr) auto}.hud-controls>button:not(.task-pill){min-width:28px!important;padding:4px!important}.game-date{padding:5px 4px!important}.left-rail button small{font-size:5.8px!important}.overlay-head p{display:none}.overlay-tabs{top:50px}.hub-pulse{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
         @media(max-height:650px) and (max-width:900px){.game-hud{height:78px;min-height:78px;grid-template-rows:34px 34px}.campus-world{top:78px!important}.screen-overlay{inset:78px 0 calc(55px + env(safe-area-inset-bottom)) 0!important}.task-pill{top:83px}.hud-metric{height:32px!important;min-height:32px!important}.left-rail button{min-height:45px!important}}
+        /* v2.2 readability reset: information may be dense, but essential UI is never miniature. */
+        .company-mark small{font-size:11px}.hud-metric small{font-size:10px}.hud-metric b{font-size:14px}.hud-metric em{font-size:10px}.game-date{font-size:12px}.difficulty-pill,.confidence{font-size:11px}
+        .left-rail button{width:76px;min-height:64px}.left-rail button small{font-size:10.5px}.left-rail button>span{font-size:20px}.screen-eyebrow{font-size:11px}.screen-heading p{font-size:14px}.section-tabs button{min-height:42px;padding:9px 14px;font-size:13px}
+        .overlay-card{width:min(1180px,calc(100vw - 118px))}.overlay-head h1{font-size:26px}.overlay-head p{font-size:13.5px}.overlay-close{width:44px;height:44px;font-size:16px}.overlay-tabs button{min-height:46px;padding:8px 13px 8px 8px;font-size:13px}.overlay-body{font-size:14px}.event-toast{left:104px;font-size:13px}.task-pill b{font-size:11px}.task-pill em{font-size:10px}
+        thead th{font-size:11.5px!important}.hub-pulse small{font-size:10px}.hub-cards p{font-size:13px}.more-grid button b{font-size:13px}.more-grid button small{font-size:11px}
+        @media(max-width:780px){.left-rail button small{font-size:10px}.section-tabs button{font-size:12.5px}.overlay-tabs button{font-size:12.5px}}
+        @media(max-width:640px){
+          .company-mark small{font-size:9px!important}.hud-metric small{font-size:8.5px!important}.hud-metric b{font-size:12px!important}.game-date{font-size:9px!important}.task-pill b{font-size:9px!important}.task-pill em{font-size:8.5px!important}
+          .left-rail button small{font-size:9px!important;line-height:1.05}.left-rail button>span{font-size:17px!important}.overlay-head h1{font-size:22px!important}.overlay-head p{font-size:12px!important}.screen-eyebrow{font-size:9px!important}.overlay-tabs button{min-height:44px!important;font-size:12px!important}.overlay-body{font-size:14px}.event-toast{font-size:12px!important}.product-moment-copy p{font-size:12px!important}.product-moment-metrics small{font-size:9px!important}.product-moment-metrics b{font-size:11px!important}.bottom-dock button small{font-size:9px!important}.more-grid button b{font-size:13px}.more-grid button small{font-size:12px}
+        }
+        @media(max-width:390px){.left-rail button small{font-size:8.5px!important}.overlay-head p{display:none}.company-mark small{display:none!important}}
         @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}.product-reveal-stage.is-spinning .product-reveal-card{transform:rotateY(180deg)!important}.market-visual-dashboard:before{display:none}}
       `}</style>
       {children}
